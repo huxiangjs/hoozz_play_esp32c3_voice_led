@@ -54,3 +54,4 @@ dkms.conf
 # Project
 MCU/build
 *.code-workspace
+*.old

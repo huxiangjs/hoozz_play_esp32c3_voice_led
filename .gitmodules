@@ -1,0 +1,6 @@
+[submodule "MCU/components/es7243e/es7243e-driver"]
+	path = MCU/components/es7243e/es7243e-driver
+	url = https://github.com/huxiangjs/es7243e-driver.git
+[submodule "MCU/components/fvad"]
+	path = MCU/components/fvad
+	url = https://github.com/huxiangjs/libfvad-components-for-esp32c3.git

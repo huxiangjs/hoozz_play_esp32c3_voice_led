@@ -6,6 +6,8 @@
 #include "esp_log.h"
 #include "esp_system.h"
 
+#include "audio.h"
+
 static const char *TAG = "APP-MAIN";
 
 static void app_show_info(void)
@@ -18,4 +20,5 @@ static void app_show_info(void)
 extern "C" void app_main(void)
 {
 	app_show_info();
+	audio_init();
 }
