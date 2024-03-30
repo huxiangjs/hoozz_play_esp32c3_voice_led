@@ -41,6 +41,7 @@ struct audio_handler {
 };
 
 void audio_init(struct audio_handler *handler);
+uint16_t audio_size_to_time(uint32_t size);
 
 #ifdef __cplusplus
 }

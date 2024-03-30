@@ -42,19 +42,21 @@
 
 // #define DEBUG
 
-#define ES7243E_ADDR			0x10	// AD0 AD1 AD2 is low
+#define ES7243E_ADDR			0x10		// AD0 AD1 AD2 is low
 
-#define AUDIO_SAMPLE_RATE		16000	// 16kHz
-#define AUDIO_FRAME_TIME		20	// 20ms
+#define AUDIO_SAMPLE_DEPTH		(16 / 8)	// 16-bit: 2-byte
+
+#define AUDIO_SAMPLE_RATE		16000		// 16kHz
+#define AUDIO_FRAME_TIME		20		// 20ms
 #define AUDIO_SAMPLE_POINT		(AUDIO_SAMPLE_RATE * AUDIO_FRAME_TIME / 1000)
-#define AUDIO_FRAME_SIZE		(AUDIO_SAMPLE_POINT * 2)
+#define AUDIO_FRAME_SIZE		(AUDIO_SAMPLE_POINT * AUDIO_SAMPLE_DEPTH)
 
-#define AUDIO_HISTORY_TIME		3000	// 3000ms
+#define AUDIO_HISTORY_TIME		3000		// 3000ms
 #define AUDIO_HISTORY_POINT		(AUDIO_SAMPLE_RATE * AUDIO_HISTORY_TIME / 1000)
-#define AUDIO_HISTORY_SIZE		(AUDIO_HISTORY_POINT * 2)
+#define AUDIO_HISTORY_SIZE		(AUDIO_HISTORY_POINT * AUDIO_SAMPLE_DEPTH)
 
-#define AUDIO_MIN_TIME			500	// 500ms
-#define AUDIO_FILTER_TIME		200	// 200ms
+#define AUDIO_MIN_TIME			500		// 500ms
+#define AUDIO_FILTER_TIME		200		// 200ms
 
 static const char *TAG = "AUDIO";
 
@@ -263,6 +265,13 @@ static bool audio_i2c_write_reg(uint8_t addr, uint8_t data)
 	}
 
 	return true;
+}
+
+uint16_t audio_size_to_time(uint32_t size)
+{
+	uint16_t ms = (uint16_t)(size * 1000 / AUDIO_SAMPLE_RATE / AUDIO_SAMPLE_DEPTH);
+
+	return ms;
 }
 
 void audio_init(struct audio_handler *handler)
