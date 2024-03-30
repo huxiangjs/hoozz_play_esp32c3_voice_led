@@ -2,7 +2,29 @@ idf_component_register(
 	SRCS
 		"main.cpp"
 		"audio.c"
+		"../components/tflm/project/examples/micro_speech/models/audio_preprocessor_int8_model_data.cc"
+		"../components/tflm/project/examples/micro_speech/models/micro_speech_quantized_model_data.cc"
 
         INCLUDE_DIRS
 		"."
+		"../components/tflm/project"
+		"../components/tflm/project/third_party/gemmlowp"
+		"../components/tflm/project/third_party/flatbuffers/include"
+		"../components/tflm/project/third_party/kissfft"
+		"../components/tflm/project/third_party/kissfft/tools"
+		"../components/tflm/project/third_party/ruy"
+		"../components/tflm/project/examples/micro_speech"
+)
+
+add_definitions(
+	-std=c++11
+	-fno-rtti
+	-fno-exceptions
+	-fno-threadsafe-statics
+	-Wno-deprecated-declarations
+	-DTF_LITE_STATIC_MEMORY
+	-fno-unwind-tables
+	-ffunction-sections
+	-fdata-sections
+	-fmessage-length=0
 )
