@@ -45,12 +45,9 @@ static struct audio_handler handler;
 
 static void audio_event_callback(uint8_t event, void *data, uint32_t size)
 {
-	if (event == AUDIO_EVENT_VOICE_START)
-		printf("START\n");
-	else if (event == AUDIO_EVENT_VOICE_STOP)
-		printf("STOP\n");
-	else
-		printf("STOP && DROP\n");
+	if (event == AUDIO_EVENT_VOICE_STOP) {
+		printf("GOT IT!\n");
+	}
 }
 
 extern "C" void app_main(void)

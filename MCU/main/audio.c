@@ -185,6 +185,18 @@ static void audio_i2s_read_task(void *args)
 #if defined(DEBUG)
 			printf("%c\n", ret ? '#' : '-');
 #endif
+
+			/*
+			 * If the last speech was too long, wait until the speech
+			 * is inactive before starting again.
+			 */
+			if (audio_event & AUDIO_EVENT_VOICE_FULL) {
+				if (ret)
+					continue;
+				else
+					audio_event = 0;
+			}
+
 			/* Changed */
 			if (audio_vad_state ^ ret) {
 				if (ret) {
@@ -216,7 +228,7 @@ static void audio_i2s_read_task(void *args)
 					memcpy(audio_history + audio_vaild_size, r_buf, copy_size);
 					audio_vaild_size += (uint32_t)copy_size;
 					audio_vad_state = 0;
-					audio_event = AUDIO_EVENT_VOICE_STOP;
+					audio_event = AUDIO_EVENT_VOICE_STOP | AUDIO_EVENT_VOICE_FULL;
 					if (audio_vaild_size < AUDIO_SAMPLE_RATE * 2 * AUDIO_MIN_TIME / 1000)
 						audio_event |= AUDIO_EVENT_VOICE_DROP;
 					xTaskNotifyGive(task_handle);

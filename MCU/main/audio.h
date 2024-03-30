@@ -34,6 +34,7 @@ extern "C" {
 #define AUDIO_EVENT_VOICE_START		0x01
 #define AUDIO_EVENT_VOICE_STOP		0x02
 #define AUDIO_EVENT_VOICE_DROP		0x04
+#define AUDIO_EVENT_VOICE_FULL		0x08
 
 struct audio_handler {
 	void (*event)(uint8_t event, void *data, uint32_t size);
