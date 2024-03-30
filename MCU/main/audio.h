@@ -25,11 +25,21 @@
 #ifndef __AUDIO_H_
 #define __AUDIO_H_
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-void audio_init(void);
+#define AUDIO_EVENT_VOICE_START		0x01
+#define AUDIO_EVENT_VOICE_STOP		0x02
+#define AUDIO_EVENT_VOICE_DROP		0x04
+
+struct audio_handler {
+	void (*event)(uint8_t event, void *data, uint32_t size);
+};
+
+void audio_init(struct audio_handler *handler);
 
 #ifdef __cplusplus
 }

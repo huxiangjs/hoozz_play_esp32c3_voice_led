@@ -38,18 +38,32 @@
 #include <fvad.h>
 #include <es7243e.h>
 
-#define DEBUG
+#include "audio.h"
+
+// #define DEBUG
 
 #define ES7243E_ADDR			0x10	// AD0 AD1 AD2 is low
 
-#define CONFIG_ADC_RATE			16000	// 16kHz
-#define CONFIG_ADC_READ_TIME		20	// 20ms
-#define CONFIG_ADC_SAMPLE_POINT		(CONFIG_ADC_RATE * CONFIG_ADC_READ_TIME / 1000)
-#define CONFIG_ADC_FRAME_SIZE		(CONFIG_ADC_SAMPLE_POINT * 2)
+#define AUDIO_SAMPLE_RATE		16000	// 16kHz
+#define AUDIO_FRAME_TIME		20	// 20ms
+#define AUDIO_SAMPLE_POINT		(AUDIO_SAMPLE_RATE * AUDIO_FRAME_TIME / 1000)
+#define AUDIO_FRAME_SIZE		(AUDIO_SAMPLE_POINT * 2)
 
-static i2s_chan_handle_t rx_chan;
+#define AUDIO_HISTORY_TIME		3000	// 3000ms
+#define AUDIO_HISTORY_POINT		(AUDIO_SAMPLE_RATE * AUDIO_HISTORY_TIME / 1000)
+#define AUDIO_HISTORY_SIZE		(AUDIO_HISTORY_POINT * 2)
+
+#define AUDIO_MIN_TIME			500	// 500ms
+#define AUDIO_FILTER_TIME		200	// 200ms
 
 static const char *TAG = "AUDIO";
+
+static i2s_chan_handle_t rx_chan;
+static TaskHandle_t task_handle;
+static uint8_t audio_event;
+static uint8_t audio_history[AUDIO_HISTORY_SIZE];
+static uint32_t audio_vaild_size;
+static uint8_t audio_vad_state;
 
 static void audio_i2c_init(void)
 {
@@ -100,7 +114,7 @@ static void audio_i2s_init(void)
 	ESP_ERROR_CHECK(i2s_new_channel(&rx_chan_cfg, NULL, &rx_chan));
 
 	i2s_tdm_config_t rx_tdm_cfg = {
-		.clk_cfg  = I2S_TDM_CLK_DEFAULT_CONFIG(CONFIG_ADC_RATE),
+		.clk_cfg  = I2S_TDM_CLK_DEFAULT_CONFIG(AUDIO_SAMPLE_RATE),
 		.slot_cfg = I2S_TDM_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
 							    I2S_SLOT_MODE_MONO,
 							    I2S_TDM_SLOT0),
@@ -125,16 +139,32 @@ static void audio_i2s_init(void)
 	ESP_ERROR_CHECK(i2s_channel_init_tdm_mode(rx_chan, &rx_tdm_cfg));
 }
 
+static void audio_process_task(void *args)
+{
+	struct audio_handler *handler = (struct audio_handler *)args;
+
+	while (1) {
+		/* Wait */
+		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+		/* Process */
+		handler->event(audio_event, audio_history, audio_vaild_size);
+	}
+
+	vTaskDelete(NULL);
+}
+
 static void audio_i2s_read_task(void *args)
 {
-	uint8_t *r_buf = (uint8_t *)calloc(1, CONFIG_ADC_FRAME_SIZE);
+	uint8_t *r_buf = (uint8_t *)calloc(1, AUDIO_FRAME_SIZE);
 	assert(r_buf);
 	size_t r_bytes = 0;
+	size_t copy_size;
+	uint16_t keep_count = 0;
 	int ret;
 
 	Fvad *vad = fvad_new();
 	ESP_ERROR_CHECK(!vad);
-	ESP_ERROR_CHECK(fvad_set_sample_rate(vad, CONFIG_ADC_RATE) < 0);
+	ESP_ERROR_CHECK(fvad_set_sample_rate(vad, AUDIO_SAMPLE_RATE) < 0);
 	ESP_ERROR_CHECK(fvad_set_mode(vad, 0) < 0);
 
 	/* Enable the RX channel */
@@ -142,20 +172,58 @@ static void audio_i2s_read_task(void *args)
 
 	while (1) {
 		/* Read i2s data */
-		if (i2s_channel_read(rx_chan, r_buf, CONFIG_ADC_FRAME_SIZE, &r_bytes, 1000/*ms*/) == ESP_OK) {
+		if (i2s_channel_read(rx_chan, r_buf, AUDIO_FRAME_SIZE, &r_bytes, 1000/*ms*/) == ESP_OK) {
 #if 0
 			ESP_LOGI(TAG, "Read Task: i2s read %d bytes, first data: %d", r_bytes, *((short int *)r_buf));
 #endif
-			ret = fvad_process(vad, (int16_t *)r_buf, CONFIG_ADC_SAMPLE_POINT);
+			ret = fvad_process(vad, (int16_t *)r_buf, AUDIO_SAMPLE_POINT);
 			if (ret < 0) {
 				ESP_LOGE(TAG, "VAD processing failed");
 				continue;
 			}
-
 			ret = !!ret;
 #if defined(DEBUG)
 			printf("%c\n", ret ? '#' : '-');
 #endif
+			/* Changed */
+			if (audio_vad_state ^ ret) {
+				if (ret) {
+					audio_vaild_size = 0;
+					audio_vad_state = ret;
+					audio_event = AUDIO_EVENT_VOICE_START;
+					xTaskNotifyGive(task_handle);
+				} else if (keep_count >= AUDIO_FILTER_TIME) {
+					audio_vad_state = ret;
+					audio_event = AUDIO_EVENT_VOICE_STOP;
+					if (audio_vaild_size < AUDIO_SAMPLE_RATE * 2 * AUDIO_MIN_TIME / 1000)
+						audio_event |= AUDIO_EVENT_VOICE_DROP;
+					xTaskNotifyGive(task_handle);
+				}
+			}
+
+			/* Save frame */
+			if (audio_vad_state) {
+				copy_size = sizeof(audio_history) - (size_t)audio_vaild_size;
+
+				if (r_bytes < copy_size) {
+					copy_size = r_bytes;
+					memcpy(audio_history + audio_vaild_size, r_buf, copy_size);
+					audio_vaild_size += (uint32_t)copy_size;
+				} else {
+#if defined(DEBUG)
+					printf("buffer full, size: %lu bytes\n", audio_vaild_size);
+#endif
+					memcpy(audio_history + audio_vaild_size, r_buf, copy_size);
+					audio_vaild_size += (uint32_t)copy_size;
+					audio_vad_state = 0;
+					audio_event = AUDIO_EVENT_VOICE_STOP;
+					if (audio_vaild_size < AUDIO_SAMPLE_RATE * 2 * AUDIO_MIN_TIME / 1000)
+						audio_event |= AUDIO_EVENT_VOICE_DROP;
+					xTaskNotifyGive(task_handle);
+				}
+			}
+
+			keep_count = ret ? 0 : (keep_count + AUDIO_FRAME_TIME);
 
 		} else {
 			ESP_LOGE(TAG, "i2s read failed");
@@ -185,7 +253,7 @@ static bool audio_i2c_write_reg(uint8_t addr, uint8_t data)
 	return true;
 }
 
-void audio_init(void)
+void audio_init(struct audio_handler *handler)
 {
 	/* I2C init */
 	audio_i2c_init();
@@ -201,5 +269,9 @@ void audio_init(void)
 
 	/* Start task */
 	vTaskDelay(1000 / portTICK_PERIOD_MS);
+	if (handler && handler->event)
+		xTaskCreate(audio_process_task, "audio_process_task", 4096, handler, 4, &task_handle);
+	else
+		ESP_LOGE(TAG, "No nedd to processing");
 	xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096, NULL, 5, NULL);
 }
