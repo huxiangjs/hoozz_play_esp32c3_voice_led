@@ -61,7 +61,8 @@
 static const char *TAG = "AUDIO";
 
 static i2s_chan_handle_t rx_chan;
-static TaskHandle_t task_handle;
+static TaskHandle_t audio_task_handle;
+static TaskHandle_t i2s_task_handle;
 static uint8_t audio_event;
 static uint8_t audio_history[AUDIO_HISTORY_SIZE];
 static uint32_t audio_vaild_size;
@@ -150,6 +151,8 @@ static void audio_process_task(void *args)
 		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 		/* Process */
 		handler->event(audio_event, audio_history, audio_vaild_size);
+		/* Done */
+		xTaskNotifyGive(i2s_task_handle);
 	}
 
 	vTaskDelete(NULL);
@@ -162,6 +165,7 @@ static void audio_i2s_read_task(void *args)
 	size_t r_bytes = 0;
 	size_t copy_size;
 	uint16_t keep_count = 0;
+	bool busy = false;
 	int ret;
 
 	Fvad *vad = fvad_new();
@@ -178,6 +182,15 @@ static void audio_i2s_read_task(void *args)
 #if 0
 			ESP_LOGI(TAG, "Read Task: i2s read %d bytes, first data: %d", r_bytes, *((short int *)r_buf));
 #endif
+			/* We discard all data received while there is audio being processed */
+			if (busy) {
+				if (ulTaskNotifyTake(pdTRUE, 0) == pdTRUE)
+					busy = false;
+				else
+					continue;
+			}
+
+			/* Do VAD */
 			ret = fvad_process(vad, (int16_t *)r_buf, AUDIO_SAMPLE_POINT);
 			if (ret < 0) {
 				ESP_LOGE(TAG, "VAD processing failed");
@@ -205,13 +218,15 @@ static void audio_i2s_read_task(void *args)
 					audio_vaild_size = 0;
 					audio_vad_state = ret;
 					audio_event = AUDIO_EVENT_VOICE_START;
-					xTaskNotifyGive(task_handle);
+					busy = true;
+					xTaskNotifyGive(audio_task_handle);
 				} else if (keep_count >= AUDIO_FILTER_TIME) {
 					audio_vad_state = ret;
 					audio_event = AUDIO_EVENT_VOICE_STOP;
 					if (audio_vaild_size < AUDIO_SAMPLE_RATE * 2 * AUDIO_MIN_TIME / 1000)
 						audio_event |= AUDIO_EVENT_VOICE_DROP;
-					xTaskNotifyGive(task_handle);
+					busy = true;
+					xTaskNotifyGive(audio_task_handle);
 				}
 			}
 
@@ -233,7 +248,8 @@ static void audio_i2s_read_task(void *args)
 					audio_event = AUDIO_EVENT_VOICE_STOP | AUDIO_EVENT_VOICE_FULL;
 					if (audio_vaild_size < AUDIO_SAMPLE_RATE * 2 * AUDIO_MIN_TIME / 1000)
 						audio_event |= AUDIO_EVENT_VOICE_DROP;
-					xTaskNotifyGive(task_handle);
+					busy = true;
+					xTaskNotifyGive(audio_task_handle);
 				}
 			}
 
@@ -291,8 +307,8 @@ void audio_init(struct audio_handler *handler)
 	/* Start task */
 	vTaskDelay(1000 / portTICK_PERIOD_MS);
 	if (handler && handler->event)
-		xTaskCreate(audio_process_task, "audio_process_task", 4096, handler, 4, &task_handle);
+		xTaskCreate(audio_process_task, "audio_process_task", 4096, handler, 4, &audio_task_handle);
 	else
 		ESP_LOGE(TAG, "No nedd to processing");
-	xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096, NULL, 5, NULL);
+	xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096, NULL, 5, &i2s_task_handle);
 }

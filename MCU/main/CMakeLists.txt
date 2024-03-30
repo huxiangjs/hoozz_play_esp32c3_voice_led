@@ -17,10 +17,7 @@ idf_component_register(
 )
 
 add_definitions(
-	-std=c++11
-	-fno-rtti
 	-fno-exceptions
-	-fno-threadsafe-statics
 	-Wno-deprecated-declarations
 	-DTF_LITE_STATIC_MEMORY
 	-fno-unwind-tables
