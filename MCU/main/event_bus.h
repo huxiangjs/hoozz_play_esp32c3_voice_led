@@ -22,28 +22,34 @@
  * SOFTWARE.
  */
 
-#ifndef __LED_H_
-#define __LED_H_
+#ifndef __EVENT_BUS_H_
+#define __EVENT_BUS_H_
 
 #include <stdint.h>
-
-#define LED_STATUS_NONE			0	// Stateless, all LEDs are off
-#define LED_STATUS_WIFI_CONNECT		1	// Wi-Fi is connected
-#define LED_STATUS_WIFI_DISCONNECT	2	// Wi-Fi is disconnected
-#define LED_STATUS_SMARTCONFIG		3	// Smart config
-#define LED_STATUS_UPGRADE		4	// Firmware update
-#define LED_STATUS_COLOR_PICK		5	// Pick color
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void led_init(void);
-void led_status_set(uint8_t new_status);
-void led_set_rgb(uint32_t rgb);
+#define EVENT_BUS_STARTUP		0x00		// Startup
+#define EVENT_BUS_START_SMART_CONFIG	0x01		// Smart config start
+#define EVENT_BUS_STOP_SMART_CONFIG	0x02		// Smart config stop
+#define EVENT_BUS_AUDIO_RECOGNITION	0x03		// Audio recognition result
+
+struct event_bus_msg {
+	uint8_t type;
+	uint32_t param1;
+};
+
+typedef bool (*event_notify_callback)(struct event_bus_msg *msg);
+
+void event_bus_send(struct event_bus_msg *msg);
+void event_bus_register(event_notify_callback callback);
+void event_bus_init(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __LED_H_ */
+#endif /* __EVENT_BUS_H_ */

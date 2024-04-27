@@ -8,6 +8,8 @@ idf_component_register(
 		"ws2812b.c"
 		"led.c"
 		"wifi.c"
+		"event_bus.c"
+		"recognition.cpp"
 
         INCLUDE_DIRS
 		"."

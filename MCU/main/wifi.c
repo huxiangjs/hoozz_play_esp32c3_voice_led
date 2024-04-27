@@ -35,6 +35,7 @@
 #include "esp_netif.h"
 #include "esp_smartconfig.h"
 #include "esp_mac.h"
+#include "event_bus.h"
 
 static const char *TAG = "WIFI";
 
@@ -48,8 +49,9 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 			  int32_t event_id, void* event_data)
 {
 	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+		/* Connect to the last saved network */
+		esp_wifi_connect();
 		ESP_LOGI(TAG, "Sta start");
-		// xTaskCreate(smartconfig_task, "smartconfig_task", 4096, NULL, 3, NULL);
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
 		esp_wifi_connect();
 		xEventGroupClearBits(s_wifi_event_group, CONNECTED_BIT);
@@ -95,11 +97,15 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 
 static void smartconfig_task(void * parm)
 {
+	struct event_bus_msg msg;
 	EventBits_t uxBits;
+	ESP_ERROR_CHECK(esp_wifi_disconnect());
 	ESP_ERROR_CHECK(esp_smartconfig_set_type(SC_TYPE_ESPTOUCH));
 
 	smartconfig_start_config_t cfg = SMARTCONFIG_START_CONFIG_DEFAULT();
 	ESP_ERROR_CHECK(esp_smartconfig_start(&cfg));
+	msg.type = EVENT_BUS_START_SMART_CONFIG;
+	event_bus_send(&msg);
 
 	while (1) {
 		uxBits = xEventGroupWaitBits(s_wifi_event_group, CONNECTED_BIT | ESPTOUCH_DONE_BIT, true, false, portMAX_DELAY);
@@ -110,6 +116,8 @@ static void smartconfig_task(void * parm)
 		if(uxBits & ESPTOUCH_DONE_BIT) {
 			ESP_LOGI(TAG, "smartconfig over");
 			esp_smartconfig_stop();
+			msg.type = EVENT_BUS_STOP_SMART_CONFIG;
+			event_bus_send(&msg);
 			vTaskDelete(NULL);
 		}
 	}

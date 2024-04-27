@@ -29,6 +29,7 @@
 #include "esp_log.h"
 #include "led.h"
 #include "ws2812b.h"
+#include "event_bus.h"
 
 static const char *TAG = "LED";
 
@@ -162,9 +163,25 @@ static __MAYBE_UNUSED void led_color_step(void)
 	hue++;
 }
 
+static bool led_event_notify_callback(struct event_bus_msg *msg)
+{
+	switch (msg->type) {
+	case EVENT_BUS_START_SMART_CONFIG:
+		led_status_set(LED_STATUS_SMARTCONFIG);
+		break;
+	case EVENT_BUS_STOP_SMART_CONFIG:
+		led_status_set(LED_STATUS_NONE);
+		break;
+	}
+
+	return false;
+}
+
 static void led_task(void *pvParameters)
 {
 	TickType_t timeout = portMAX_DELAY;
+
+	event_bus_register(led_event_notify_callback);
 
 	while(1) {
 		// if(xQueueReceive(queue, &status, timeout)) {}
@@ -217,17 +234,13 @@ void led_init(void)
 
 	/* Create message queue */
 	queue = xQueueCreate(5, sizeof(uint8_t));
+	ESP_ERROR_CHECK(queue == NULL);
+
 	/* Start task */
 	xTaskCreate(led_task, "led_task", 512, NULL, tskIDLE_PRIORITY, NULL);
 }
 
 void led_status_set(uint8_t new_status)
 {
-	if (queue)
-		xQueueSend(queue, (void *)&new_status, (TickType_t)0);
-}
-
-uint8_t led_status_get(void)
-{
-	return status;
+	xQueueSend(queue, (void *)&new_status, (TickType_t)0);
 }

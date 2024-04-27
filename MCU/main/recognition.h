@@ -22,28 +22,9 @@
  * SOFTWARE.
  */
 
-#ifndef __LED_H_
-#define __LED_H_
+#ifndef __RECOGNITION_H_
+#define __RECOGNITION_H_
 
-#include <stdint.h>
+void recognition_init(void);
 
-#define LED_STATUS_NONE			0	// Stateless, all LEDs are off
-#define LED_STATUS_WIFI_CONNECT		1	// Wi-Fi is connected
-#define LED_STATUS_WIFI_DISCONNECT	2	// Wi-Fi is disconnected
-#define LED_STATUS_SMARTCONFIG		3	// Smart config
-#define LED_STATUS_UPGRADE		4	// Firmware update
-#define LED_STATUS_COLOR_PICK		5	// Pick color
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void led_init(void);
-void led_status_set(uint8_t new_status);
-void led_set_rgb(uint32_t rgb);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* __LED_H_ */
+#endif /* __RECOGNITION_H_ */

@@ -67,6 +67,7 @@ static uint8_t audio_event;
 static uint8_t audio_history[AUDIO_HISTORY_SIZE];
 static uint32_t audio_vaild_size;
 static uint8_t audio_vad_state;
+static struct audio_handler audio_hand;
 
 static void audio_i2c_init(void)
 {
@@ -292,6 +293,13 @@ uint16_t audio_size_to_time(uint32_t size)
 
 void audio_init(struct audio_handler *handler)
 {
+	if (handler == NULL) {
+		ESP_LOGE(TAG, "handler is null");
+		return;
+	}
+
+	audio_hand = *handler;
+
 	/* I2C init */
 	audio_i2c_init();
 	audio_i2c_scan();
@@ -306,8 +314,8 @@ void audio_init(struct audio_handler *handler)
 
 	/* Start task */
 	vTaskDelay(1000 / portTICK_PERIOD_MS);
-	if (handler && handler->event)
-		xTaskCreate(audio_process_task, "audio_process_task", 4096, handler, 4, &audio_task_handle);
+	if (audio_hand.event)
+		xTaskCreate(audio_process_task, "audio_process_task", 4096, &audio_hand, 4, &audio_task_handle);
 	else
 		ESP_LOGE(TAG, "No nedd to processing");
 	xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096, NULL, 5, &i2s_task_handle);
