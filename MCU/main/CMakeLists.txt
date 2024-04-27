@@ -7,6 +7,7 @@ idf_component_register(
 		"led_strip_encoder.c"
 		"ws2812b.c"
 		"led.c"
+		"wifi.c"
 
         INCLUDE_DIRS
 		"."

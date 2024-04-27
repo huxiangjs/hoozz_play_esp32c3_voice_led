@@ -31,10 +31,12 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs_flash.h"
 
 #include "audio.h"
 #include "ws2812b.h"
 #include "led.h"
+#include "wifi.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -189,6 +191,17 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 			       std::end(category_predictions)));
 	printf("RESULT <<<%s>>>\n", kCategoryLabels[prediction_index]);
 
+#if 1 /* test */
+	if (category_predictions[prediction_index] > 0.75) {
+		if (prediction_index == 2) {
+			led_set_rgb(0xffffff);
+			printf("LED ON\n");
+		} else if (prediction_index == 3) {
+			led_set_rgb(0x000000);
+			printf("LED OFF\n");
+		}
+	}
+#endif
 	return kTfLiteOk;
 }
 
@@ -298,23 +311,14 @@ extern "C" void app_main(void)
 	usb_uart_config();
 #endif
 
+	ESP_ERROR_CHECK(nvs_flash_init());
+	wifi_init();
+	wifi_smartconfig();
+
 	handler.event = audio_event_callback;
 	audio_init(&handler);
 
 	ws2812b_init();
 	led_init();
-
-#if 1 /* test */
-	uint32_t rgb_buf[WS2812B_LED_NUMBERS] = {0xff0000, 0x00ff00, 0x0000ff, 0xffffff};
-	ws2812b_copy_to_buffer(rgb_buf);
-	ws2812b_refresh();
-	vTaskDelay(pdMS_TO_TICKS(4000));
-
-	led_status_set(LED_STATUS_NONE);
-	vTaskDelay(pdMS_TO_TICKS(1000));
-	led_status_set(LED_STATUS_SMARTCONFIG);
-	vTaskDelay(pdMS_TO_TICKS(4000));
-	led_status_set(LED_STATUS_COLOR_PICK);
-	vTaskDelay(pdMS_TO_TICKS(4000));
-#endif
+	led_set_rgb(0x000000);
 }
