@@ -130,8 +130,8 @@ static void audio_i2s_init(void)
 			.invert_flags = {
 				.mclk_inv = false,
 				.bclk_inv = false,
-				// .ws_inv   = false, // Left Channel
-				.ws_inv   = true, // Right Channel
+				.ws_inv   = false, // Left Channel
+				// .ws_inv   = true, // Right Channel
 			},
 		},
 	};

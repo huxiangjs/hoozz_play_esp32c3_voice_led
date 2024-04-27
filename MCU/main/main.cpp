@@ -165,6 +165,7 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 	ESP_ERROR_CHECK(output == nullptr);
 
 	// check output shape is compatible with our number of prediction categories
+	MicroPrintf("MicroSpeech model output = %u", output->dims->data[output->dims->size - 1]);
 	ESP_ERROR_CHECK(kCategoryCount != output->dims->data[output->dims->size - 1]);
 
 	float output_scale = output->params.scale;
