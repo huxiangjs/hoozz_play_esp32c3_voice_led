@@ -4,6 +4,9 @@ idf_component_register(
 		"audio.c"
 		"../components/tflm/project/examples/micro_speech/models/audio_preprocessor_int8_model_data.cc"
 		"../components/tflm/project/examples/micro_speech/models/micro_speech_quantized_model_data.cc"
+		"led_strip_encoder.c"
+		"ws2812b.c"
+		"led.c"
 
         INCLUDE_DIRS
 		"."

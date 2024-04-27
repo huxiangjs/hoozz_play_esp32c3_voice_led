@@ -29,9 +29,12 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
-#include "audio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+#include "audio.h"
+#include "ws2812b.h"
+#include "led.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -297,4 +300,21 @@ extern "C" void app_main(void)
 
 	handler.event = audio_event_callback;
 	audio_init(&handler);
+
+	ws2812b_init();
+	led_init();
+
+#if 1 /* test */
+	uint32_t rgb_buf[WS2812B_LED_NUMBERS] = {0xff0000, 0x00ff00, 0x0000ff, 0xffffff};
+	ws2812b_copy_to_buffer(rgb_buf);
+	ws2812b_refresh();
+	vTaskDelay(pdMS_TO_TICKS(4000));
+
+	led_status_set(LED_STATUS_NONE);
+	vTaskDelay(pdMS_TO_TICKS(1000));
+	led_status_set(LED_STATUS_SMARTCONFIG);
+	vTaskDelay(pdMS_TO_TICKS(4000));
+	led_status_set(LED_STATUS_COLOR_PICK);
+	vTaskDelay(pdMS_TO_TICKS(4000));
+#endif
 }
