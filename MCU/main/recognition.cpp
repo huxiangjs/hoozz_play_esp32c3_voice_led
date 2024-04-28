@@ -184,7 +184,10 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 	MicroPrintf("RESULT: %s", kCategoryLabels[prediction_index]);
 
 	if (category_predictions[prediction_index] > RECOGNITION_THRESHOLD) {
-		struct event_bus_msg msg = {.type = EVENT_BUS_AUDIO_RECOGNITION};
+		struct event_bus_msg msg = {
+			.type = EVENT_BUS_AUDIO_RECOGNITION,
+			.param1 = 0,
+		};
 		if (prediction_index == 2) {
 			msg.param1 = 1;
 			event_bus_send(&msg);

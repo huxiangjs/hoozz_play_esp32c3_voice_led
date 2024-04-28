@@ -6,7 +6,7 @@ idf_component_register(
 		"../components/tflm/project/examples/micro_speech/models/micro_speech_quantized_model_data.cc"
 		"led_strip_encoder.c"
 		"ws2812b.c"
-		"led.c"
+		"led_effects.c"
 		"wifi.c"
 		"event_bus.c"
 		"recognition.cpp"

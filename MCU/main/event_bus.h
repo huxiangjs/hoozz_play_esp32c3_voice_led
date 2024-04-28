@@ -36,6 +36,7 @@ extern "C" {
 #define EVENT_BUS_START_SMART_CONFIG	0x01		// Smart config start
 #define EVENT_BUS_STOP_SMART_CONFIG	0x02		// Smart config stop
 #define EVENT_BUS_AUDIO_RECOGNITION	0x03		// Audio recognition result
+#define EVENT_BUS_LED_COLOR_UPDATED	0x04		// LED color updated
 
 struct event_bus_msg {
 	uint8_t type;

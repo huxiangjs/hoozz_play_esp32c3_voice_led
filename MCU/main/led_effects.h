@@ -22,28 +22,30 @@
  * SOFTWARE.
  */
 
-#ifndef __LED_H_
-#define __LED_H_
+#ifndef __LED_EFFECTS_H_
+#define __LED_EFFECTS_H_
 
 #include <stdint.h>
 
-#define LED_STATUS_NONE			0	// Stateless, all LEDs are off
-#define LED_STATUS_WIFI_CONNECT		1	// Wi-Fi is connected
-#define LED_STATUS_WIFI_DISCONNECT	2	// Wi-Fi is disconnected
-#define LED_STATUS_SMARTCONFIG		3	// Smart config
-#define LED_STATUS_UPGRADE		4	// Firmware update
-#define LED_STATUS_COLOR_PICK		5	// Pick color
+#define LED_EFFECTS_NONE		0x00	// Idle
+#define LED_EFFECTS_ALL_ON		0x01	// All LEDs are on
+#define LED_EFFECTS_ALL_OFF		0x02	// All LEDs are off
+#define LED_EFFECTS_WIFI_CONNECT	0x03	// Wi-Fi is connected
+#define LED_EFFECTS_WIFI_DISCONNECT	0x04	// Wi-Fi is disconnected
+#define LED_EFFECTS_SMARTCONFIG		0x05	// Smart config
+#define LED_EFFECTS_UPGRADE		0x06	// Firmware update
+#define LED_EFFECTS_COLOR_PICK		0x07	// Pick color
+#define LED_EFFECTS_COLOR_FULL		0x08	// Fill color
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void led_init(void);
-void led_status_set(uint8_t new_status);
-void led_set_rgb(uint32_t rgb);
+void led_effects_init(void);
+void led_effects_play(uint8_t id, uint32_t param);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __LED_H_ */
+#endif /* __LED_EFFECTS_H_ */

@@ -35,7 +35,7 @@
 
 #include "audio.h"
 #include "ws2812b.h"
-#include "led.h"
+#include "led_effects.h"
 #include "wifi.h"
 #include "event_bus.h"
 #include "recognition.h"
@@ -69,13 +69,16 @@ static bool app_event_notify_callback(struct event_bus_msg *msg)
 			}
 		} else {
 			if (msg->param1 == 1) {
-				led_set_rgb(0xffffff);
+				led_effects_play(LED_EFFECTS_ALL_ON, 0);
 				printf("LED ON\n");
 			} else {
-				led_set_rgb(0x000000);
+				led_effects_play(LED_EFFECTS_ALL_OFF, 0);
 				printf("LED OFF\n");
 			}
 		}
+		break;
+	case EVENT_BUS_LED_COLOR_UPDATED:
+		printf("Color updated\n");
 		break;
 	}
 
@@ -95,9 +98,7 @@ extern "C" void app_main(void)
 	event_bus_send(&msg);
 
 	/* LED */
-	ws2812b_init();
-	led_init();
-	led_set_rgb(0x000000);
+	led_effects_init();
 
 	/* Audio recognition */
 	recognition_init();
