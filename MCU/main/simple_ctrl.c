@@ -46,7 +46,7 @@ static const char *TAG = "SIMPLE-CTRL";
 #define DISCOVER_BROADCAST_ADDRESS	"255.255.255.255"
 
 static int discover_socket;
-SemaphoreHandle_t network_ready;
+static SemaphoreHandle_t network_ready;
 
 static void simple_ctrl_do_discover(void)
 {

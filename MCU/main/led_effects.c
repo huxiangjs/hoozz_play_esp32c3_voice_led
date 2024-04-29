@@ -110,8 +110,6 @@ static void led_effects_task(void *pvParameters)
 	uint32_t last_color = color;
 	int back_color = -1;
 
-	event_bus_register(led_event_notify_callback);
-
 	while(1) {
 		if(xQueueReceive(queue, &update, timeout)) {
 			if (effects_id != LED_EFFECTS_NONE &&
@@ -200,8 +198,10 @@ void led_effects_init(void)
 	queue = xQueueCreate(5, sizeof(struct led_effects_update));
 	ESP_ERROR_CHECK(queue == NULL);
 
+	event_bus_register(led_event_notify_callback);
+
 	/* Start task */
-	xTaskCreate(led_effects_task, "led_effects_task", 512, NULL, tskIDLE_PRIORITY, NULL);
+	xTaskCreate(led_effects_task, "led_effects_task", 1024, NULL, tskIDLE_PRIORITY, NULL);
 }
 
 void led_effects_play(uint8_t id, uint32_t param)

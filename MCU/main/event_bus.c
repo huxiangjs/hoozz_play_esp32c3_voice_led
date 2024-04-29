@@ -29,6 +29,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include "esp_log.h"
 #include "event_bus.h"
 
@@ -38,13 +39,15 @@ static const char *TAG = "EVENT-BUS";
 #define MAX_EVENT_NUM		10
 
 static QueueHandle_t queue = NULL;
+static SemaphoreHandle_t register_mutex;
 
 struct event_notify {
 	event_notify_callback call;
 	struct event_notify *next;
 };
 
-static struct event_notify *notify_link = NULL;
+static struct event_notify *notify_link_head = NULL;
+static struct event_notify *notify_link_tail = NULL;
 
 void event_bus_send(struct event_bus_msg *msg)
 {
@@ -61,10 +64,17 @@ void event_bus_register(event_notify_callback callback)
 	notify->call = callback;
 	notify->next = NULL;
 
-	if (notify_link)
-		notify_link->next = notify;
-	else
-		notify_link = notify;
+	xSemaphoreTake(register_mutex, portMAX_DELAY);
+	if (notify_link_head) {
+		notify_link_tail->next = notify;
+		notify_link_tail = notify_link_tail->next;
+	} else {
+		notify_link_head = notify;
+		notify_link_tail = notify_link_head;
+	}
+	xSemaphoreGive(register_mutex);
+
+	// printf("Register [%p]\n", callback);
 }
 
 static void event_bus_task(void *pvParameters)
@@ -75,11 +85,12 @@ static void event_bus_task(void *pvParameters)
 
 	while(1) {
 		if(xQueueReceive(queue, &msg, portMAX_DELAY)) {
-			iter = notify_link;
+			iter = notify_link_head;
 			while (iter) {
 				processed = iter->call(&msg);
 				if (processed)
 					break;
+				// printf("Call [%p]\n", iter->call);
 				iter = iter->next;
 			}
 		}
@@ -96,6 +107,8 @@ void event_bus_init(void)
 	/* Create message queue */
 	queue = xQueueCreate(MAX_EVENT_NUM, sizeof(struct event_bus_msg));
 	ESP_ERROR_CHECK(queue == NULL);
+
+	register_mutex = xSemaphoreCreateMutex();
 
 	/* Start task */
 	xTaskCreate(event_bus_task, "event_bus_task", 2048, NULL, tskIDLE_PRIORITY, NULL);

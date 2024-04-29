@@ -104,7 +104,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 	}
 }
 
-static void smartconfig_task(void * parm)
+static void smartconfig_task(void *pvParameters)
 {
 	struct event_bus_msg msg;
 	EventBits_t uxBits;
@@ -134,7 +134,7 @@ static void smartconfig_task(void * parm)
 
 void wifi_smartconfig(void)
 {
-	xTaskCreate(smartconfig_task, "smartconfig_task", 4096, NULL, 3, NULL);
+	xTaskCreate(smartconfig_task, "smartconfig_task", 4096, NULL, tskIDLE_PRIORITY, NULL);
 }
 
 void wifi_init(void)
