@@ -48,13 +48,22 @@ static void smartconfig_task(void * parm);
 static void event_handler(void* arg, esp_event_base_t event_base,
 			  int32_t event_id, void* event_data)
 {
+	struct event_bus_msg msg;
+
 	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
 		/* Connect to the last saved network */
 		esp_wifi_connect();
-		ESP_LOGI(TAG, "Sta start");
+		ESP_LOGI(TAG, "Station start");
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+		// ESP_LOGI(TAG, "Station disconnected from AP");
 		esp_wifi_connect();
 		xEventGroupClearBits(s_wifi_event_group, CONNECTED_BIT);
+		msg.type = EVENT_BUS_WIFI_DISCONNECTED;
+		event_bus_send(&msg);
+	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+		ESP_LOGI(TAG, "Station connected to AP");
+		msg.type = EVENT_BUS_WIFI_CONNECTED;
+		event_bus_send(&msg);
 	} else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
 		xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT);
 	} else if (event_base == SC_EVENT && event_id == SC_EVENT_SCAN_DONE) {

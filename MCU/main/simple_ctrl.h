@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2024 huxiangjs
+ * Copyright (c) 2024 Hoozz (huxiangjs)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,37 +22,17 @@
  * SOFTWARE.
  */
 
-#ifndef __EVENT_BUS_H_
-#define __EVENT_BUS_H_
-
-#include <stdint.h>
-#include <stdbool.h>
+#ifndef __SIMPLE_CTRL_H_
+#define __SIMPLE_CTRL_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define EVENT_BUS_STARTUP		0x00		// Startup
-#define EVENT_BUS_START_SMART_CONFIG	0x01		// Smart config start
-#define EVENT_BUS_STOP_SMART_CONFIG	0x02		// Smart config stop
-#define EVENT_BUS_AUDIO_RECOGNITION	0x03		// Audio recognition result
-#define EVENT_BUS_LED_COLOR_UPDATED	0x04		// LED color updated
-#define EVENT_BUS_WIFI_CONNECTED	0x05		// Wi-Fi is connected
-#define EVENT_BUS_WIFI_DISCONNECTED	0x06		// Wi-Fi is disconnected
-
-struct event_bus_msg {
-	uint8_t type;
-	uint32_t param1;
-};
-
-typedef bool (*event_notify_callback)(struct event_bus_msg *msg);
-
-void event_bus_send(struct event_bus_msg *msg);
-void event_bus_register(event_notify_callback callback);
-void event_bus_init(void);
+void simple_ctrl_init(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __EVENT_BUS_H_ */
+#endif /* __RECOGNITION_H_ */

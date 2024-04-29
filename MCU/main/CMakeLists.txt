@@ -10,6 +10,7 @@ idf_component_register(
 		"wifi.c"
 		"event_bus.c"
 		"recognition.cpp"
+		"simple_ctrl.c"
 
         INCLUDE_DIRS
 		"."

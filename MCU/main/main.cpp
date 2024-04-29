@@ -39,6 +39,7 @@
 #include "wifi.h"
 #include "event_bus.h"
 #include "recognition.h"
+#include "simple_ctrl.h"
 
 static const char *TAG = "APP-MAIN";
 
@@ -106,6 +107,9 @@ extern "C" void app_main(void)
 
 	/* Wifi */
 	wifi_init();
+
+	/* Network ctrl */
+	simple_ctrl_init();
 
 	allow_wifi_config = true;
 	vTaskDelay(pdMS_TO_TICKS(10000));
