@@ -45,6 +45,9 @@ static const char *TAG = "SIMPLE-CTRL";
 #define DISCOVER_BROADCAST_NUM		40
 #define DISCOVER_BROADCAST_ADDRESS	"255.255.255.255"
 
+#define BODY_TCP_PORT			DISCOVER_UDP_PORT
+#define BODY_TCP_MAX_ACCEPT		5
+
 static int discover_socket;
 static SemaphoreHandle_t network_ready;
 
@@ -102,6 +105,8 @@ static void simple_ctrl_do_discover(void)
 
 static void simple_ctrl_discover_task(void *pvParameters)
 {
+	ESP_LOGI(TAG, "Discover Running");
+
 	while (1) {
 		ESP_LOGI(TAG, "Wait network ready...");
 		xSemaphoreTake(network_ready, portMAX_DELAY);
@@ -118,8 +123,6 @@ static void simple_ctrl_discover_init(void)
 	int operate = 1;
 	struct sockaddr_in address;
 	int ret;
-
-	ESP_LOGI(TAG, "Discover Init");
 
 	/* Create UDP */
 	discover_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -159,12 +162,118 @@ static bool simple_ctrl_notify_callback(struct event_bus_msg *msg)
 	return false;
 }
 
+static void simple_ctrl_body_task(void *pvParameters)
+{
+	int operate = 1;
+	int ret;
+	static int body_socket;
+	struct sockaddr_in address;
+	struct sockaddr_in addr_in;
+	socklen_t addr_size = sizeof(addr_in);
+	int fds[BODY_TCP_MAX_ACCEPT];
+	int index;
+	int max_fd;
+	int newconn;
+	fd_set readfds;
+
+	ESP_LOGI(TAG, "Ctrl Body Running");
+
+	/* Create UDP */
+	body_socket = socket(AF_INET, SOCK_STREAM, 0);
+	ESP_ERROR_CHECK(body_socket < 0);
+
+	/* Allow binding address reuse */
+	setsockopt(body_socket, SOL_SOCKET, SO_REUSEADDR, &operate, sizeof(operate));
+
+	/* Bind port */
+	address.sin_family = AF_INET;
+	address.sin_port = htons(BODY_TCP_PORT);
+	address.sin_addr.s_addr = INADDR_ANY;
+	ret = bind(body_socket, (struct sockaddr *)&address, sizeof (address));
+	ESP_ERROR_CHECK(ret < 0);
+
+	/*
+	 * Start listen
+	 *
+	 * TCP listen backlog = 1, then the maximum waiting length is 1 + 1 = 2
+	 * (backlog represents the maximum length of the waiting queue)
+	 */
+	ret = listen(body_socket, 1);
+	ESP_ERROR_CHECK(ret < 0);
+
+	/* Initialize all to invalid */
+	for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++)
+		fds[index] = -1;
+
+	while (1) {
+		/* Set select */
+		FD_ZERO(&readfds);
+		FD_SET(body_socket, &readfds);
+		max_fd = body_socket;
+		/* Find all valid sockets */
+		for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
+			if (fds[index] != -1) {
+				FD_SET(fds[index], &readfds);
+				if (fds[index] > max_fd)
+					max_fd = fds[index];
+			}
+		}
+
+		/* Wait */
+		ret = select(max_fd + 1, &readfds, NULL, NULL, NULL);
+		ESP_ERROR_CHECK(ret <= 0);
+
+		/* Need to accept or receive? */
+		if (FD_ISSET(body_socket, &readfds)) {
+			newconn = accept(body_socket, (struct sockaddr *)&addr_in, &addr_size);
+			if (newconn >= 0) {
+				ESP_LOGI(TAG, "%s:%d has been connected (%d)", inet_ntoa(addr_in.sin_addr),
+					 ntohs(addr_in.sin_port), newconn);
+			} else {
+				ESP_LOGI(TAG, "socket < 0, exit body");
+				break;
+			}
+
+			for (index = 0; (index < BODY_TCP_MAX_ACCEPT) && (fds[index] != -1); index++);
+			if (index < BODY_TCP_MAX_ACCEPT) {
+				fds[index] = newconn;
+			} else {
+				ESP_LOGW(TAG, "The connection has reached the set maximum");
+				close(newconn);
+				ESP_LOGI(TAG, "Closed (%d)", newconn);
+			}
+		} else {
+			for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
+				if (fds[index] != -1 && FD_ISSET(fds[index], &readfds)) {
+					char buf[32];
+					int len = recv(fds[index], buf, sizeof(buf), 0);
+					if (len > 0) {
+						printf("recv: %d\n", len);
+						len = send(fds[index], buf, len, 0);
+						printf("send: %d\n", len);
+					} else {
+						close(fds[index]);
+						ESP_LOGI(TAG, "len <= 0, disconnected (%d)", fds[index]);
+						fds[index] = -1;
+					}
+				}
+			}
+		}
+	}
+
+	close(body_socket);
+	vTaskDelete(NULL);
+}
+
 void simple_ctrl_init(void)
 {
 	network_ready = xSemaphoreCreateBinary();
 	ESP_ERROR_CHECK(network_ready == NULL);
 
 	xTaskCreate(simple_ctrl_discover_task, "simple_ctrl_discover_task", 2048,
+		    NULL, tskIDLE_PRIORITY, NULL);
+
+	xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 2048,
 		    NULL, tskIDLE_PRIORITY, NULL);
 
 	event_bus_register(simple_ctrl_notify_callback);
