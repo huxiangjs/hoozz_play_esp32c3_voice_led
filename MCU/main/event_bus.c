@@ -102,6 +102,8 @@ static void event_bus_task(void *pvParameters)
 
 void event_bus_init(void)
 {
+	int ret;
+
 	ESP_LOGI(TAG, "Event Bus Init");
 
 	/* Create message queue */
@@ -111,5 +113,6 @@ void event_bus_init(void)
 	register_mutex = xSemaphoreCreateMutex();
 
 	/* Start task */
-	xTaskCreate(event_bus_task, "event_bus_task", 2048, NULL, tskIDLE_PRIORITY, NULL);
+	ret = xTaskCreate(event_bus_task, "event_bus_task", 2048, NULL, tskIDLE_PRIORITY, NULL);
+	ESP_ERROR_CHECK(ret != pdPASS);
 }

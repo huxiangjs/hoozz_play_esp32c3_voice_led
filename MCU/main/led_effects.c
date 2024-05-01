@@ -189,6 +189,8 @@ static void led_effects_task(void *pvParameters)
 
 void led_effects_init(void)
 {
+	int ret;
+
 	ESP_LOGI(TAG, "LED Init");
 
 	ws2812b_init();
@@ -201,7 +203,8 @@ void led_effects_init(void)
 	event_bus_register(led_event_notify_callback);
 
 	/* Start task */
-	xTaskCreate(led_effects_task, "led_effects_task", 1024, NULL, tskIDLE_PRIORITY, NULL);
+	ret = xTaskCreate(led_effects_task, "led_effects_task", 1024, NULL, tskIDLE_PRIORITY, NULL);
+	ESP_ERROR_CHECK(ret != pdPASS);
 }
 
 void led_effects_play(uint8_t id, uint32_t param)

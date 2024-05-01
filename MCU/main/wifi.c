@@ -134,7 +134,10 @@ static void smartconfig_task(void *pvParameters)
 
 void wifi_smartconfig(void)
 {
-	xTaskCreate(smartconfig_task, "smartconfig_task", 4096, NULL, tskIDLE_PRIORITY, NULL);
+	int ret;
+	ret = xTaskCreate(smartconfig_task, "smartconfig_task", 4096,
+			  NULL, tskIDLE_PRIORITY, NULL);
+	ESP_ERROR_CHECK(ret != pdPASS);
 }
 
 void wifi_init(void)

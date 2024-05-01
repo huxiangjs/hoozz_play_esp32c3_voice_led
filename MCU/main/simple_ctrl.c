@@ -342,14 +342,18 @@ static void simple_ctrl_body_task(void *pvParameters)
 
 void simple_ctrl_init(void)
 {
+	int ret;
+
 	network_ready = xSemaphoreCreateBinary();
 	ESP_ERROR_CHECK(network_ready == NULL);
 
-	xTaskCreate(simple_ctrl_discover_task, "simple_ctrl_discover_task", 2048,
-		    NULL, tskIDLE_PRIORITY + 1, NULL);
+	ret = xTaskCreate(simple_ctrl_discover_task, "simple_ctrl_discover_task", 2048,
+			  NULL, tskIDLE_PRIORITY + 1, NULL);
+	ESP_ERROR_CHECK(ret != pdPASS);
 
-	xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 2048,
-		    NULL, tskIDLE_PRIORITY + 1, NULL);
+	ret = xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 2048,
+			  NULL, tskIDLE_PRIORITY + 1, NULL);
+	ESP_ERROR_CHECK(ret != pdPASS);
 
 	event_bus_register(simple_ctrl_notify_callback);
 }

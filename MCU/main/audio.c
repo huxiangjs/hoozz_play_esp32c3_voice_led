@@ -293,6 +293,8 @@ uint16_t audio_size_to_time(uint32_t size)
 
 void audio_init(struct audio_handler *handler)
 {
+	int ret;
+
 	if (handler == NULL) {
 		ESP_LOGE(TAG, "handler is null");
 		return;
@@ -314,9 +316,15 @@ void audio_init(struct audio_handler *handler)
 
 	/* Start task */
 	vTaskDelay(1000 / portTICK_PERIOD_MS);
-	if (audio_hand.event)
-		xTaskCreate(audio_process_task, "audio_process_task", 4096, &audio_hand, tskIDLE_PRIORITY + 1, &audio_task_handle);
-	else
+	if (audio_hand.event) {
+		ret = xTaskCreate(audio_process_task, "audio_process_task", 4096,
+				  &audio_hand, tskIDLE_PRIORITY + 1, &audio_task_handle);
+		ESP_ERROR_CHECK(ret != pdPASS);
+	} else {
 		ESP_LOGE(TAG, "No nedd to processing");
-	xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096, NULL, tskIDLE_PRIORITY, &i2s_task_handle);
+	}
+
+	ret = xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096,
+			  NULL, tskIDLE_PRIORITY, &i2s_task_handle);
+	ESP_ERROR_CHECK(ret != pdPASS);
 }
