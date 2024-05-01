@@ -48,9 +48,11 @@ static const char *TAG = "SIMPLE-CTRL";
 #define BODY_TCP_PORT			DISCOVER_UDP_PORT
 #define BODY_TCP_MAX_ACCEPT		5
 #define BODY_TCP_BUFFER_SIZE		128
+#define BODY_TCP_TIMEOUT		10
 
-#define CTRL_DATA_TYPE_QUERY		0x00
-#define CTRL_DATA_TYPE_NOTIFY		0x01
+#define CTRL_DATA_TYPE_PING		0x00
+#define CTRL_DATA_TYPE_QUERY		0x01
+#define CTRL_DATA_TYPE_NOTIFY		0x02
 
 struct simple_ctrl_handle {
 	uint8_t data_type;
@@ -176,6 +178,7 @@ static void simple_ctrl_body_handle(void)
 {
 	int operate = 1;
 	int ret;
+	int sel_ret;
 	static int body_socket;
 	struct sockaddr_in address;
 	struct sockaddr_in addr_in;
@@ -189,6 +192,10 @@ static void simple_ctrl_body_handle(void)
 	struct simple_ctrl_handle handle;
 	uint32_t count;
 	uint32_t size;
+	struct timeval timeout;
+
+	timeout.tv_sec = BODY_TCP_TIMEOUT;
+	timeout.tv_usec = 0;
 
 	/* Create UDP */
 	body_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -231,9 +238,10 @@ static void simple_ctrl_body_handle(void)
 			}
 		}
 
-		/* Wait */
-		ret = select(max_fd + 1, &readfds, NULL, NULL, NULL);
-		ESP_ERROR_CHECK(ret <= 0);
+		/* Wait (OK > 0; Timeout == 0; Failed < 0) */
+		sel_ret = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
+		ESP_ERROR_CHECK(sel_ret < 0);
+		ESP_LOGD(TAG, "Select resule: %d", sel_ret);
 
 		/* Need to accept or receive? */
 		if (FD_ISSET(body_socket, &readfds)) {
@@ -248,15 +256,19 @@ static void simple_ctrl_body_handle(void)
 
 			for (index = 0; (index < BODY_TCP_MAX_ACCEPT) && (fds[index] != -1); index++);
 			if (index < BODY_TCP_MAX_ACCEPT) {
+				/* Set read timeout */
+				setsockopt(newconn, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 				fds[index] = newconn;
 			} else {
 				ESP_LOGW(TAG, "The connection has reached the set maximum");
 				close(newconn);
 				ESP_LOGI(TAG, "Closed (%d)", newconn);
 			}
-		} else {
-			for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
-				if (fds[index] != -1 && FD_ISSET(fds[index], &readfds)) {
+		}
+
+		for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
+			if (fds[index] != -1) {
+				if (FD_ISSET(fds[index], &readfds)) {
 					/* Read control fields */
 					ret = recv(fds[index], buffer, 6, 0);
 					if (ret > 0) {
@@ -284,7 +296,7 @@ static void simple_ctrl_body_handle(void)
 							/* Read pack data */
 							ret = recv(fds[index], buffer, size, 0);
 							if (ret <= 0) {
-								ESP_LOGI(TAG, "Read exception, disconnected (%d)", fds[index]);
+								ESP_LOGI(TAG, "Read exception or timeout, disconnected (%d)", fds[index]);
 								goto closefd;
 							}
 
@@ -302,18 +314,20 @@ static void simple_ctrl_body_handle(void)
 							}
 						}
 					} else {
-						ESP_LOGI(TAG, "ret <= 0, disconnected (%d)", fds[index]);
-closefd:
-						close(fds[index]);
-						fds[index] = -1;
+						ESP_LOGI(TAG, "Read exception or timeout, disconnected (%d)", fds[index]);
+						goto closefd;
 					}
+				} else if (sel_ret == 0) {
+					ESP_LOGI(TAG, "Select timeout, disconnected (%d)", fds[index]);
+closefd:
+					close(fds[index]);
+					fds[index] = -1;
 				}
 			}
 		}
 	}
 
 	close(body_socket);
-
 }
 
 static void simple_ctrl_body_task(void *pvParameters)
