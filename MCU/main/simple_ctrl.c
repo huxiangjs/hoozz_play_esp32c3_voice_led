@@ -47,6 +47,16 @@ static const char *TAG = "SIMPLE-CTRL";
 
 #define BODY_TCP_PORT			DISCOVER_UDP_PORT
 #define BODY_TCP_MAX_ACCEPT		5
+#define BODY_TCP_BUFFER_SIZE		128
+
+#define CTRL_DATA_TYPE_QUERY		0x00
+#define CTRL_DATA_TYPE_NOTIFY		0x01
+
+struct simple_ctrl_handle {
+	uint8_t data_type;
+	uint8_t encryp_type;
+	uint32_t data_len;
+};
 
 static int discover_socket;
 static SemaphoreHandle_t network_ready;
@@ -162,7 +172,19 @@ static bool simple_ctrl_notify_callback(struct event_bus_msg *msg)
 	return false;
 }
 
-static void simple_ctrl_body_task(void *pvParameters)
+static void simple_ctrl_handle_reset(struct simple_ctrl_handle *handle)
+{
+	memset(handle, 0, sizeof(struct simple_ctrl_handle));
+}
+
+static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
+				  char *buffer, int vaild_size, int buff_size)
+{
+
+	return 0;
+}
+
+static void simple_ctrl_body_handle(void)
 {
 	int operate = 1;
 	int ret;
@@ -175,8 +197,10 @@ static void simple_ctrl_body_task(void *pvParameters)
 	int max_fd;
 	int newconn;
 	fd_set readfds;
-
-	ESP_LOGI(TAG, "Ctrl Body Running");
+	char buffer[BODY_TCP_BUFFER_SIZE];
+	struct simple_ctrl_handle handle;
+	uint32_t count;
+	uint32_t size;
 
 	/* Create UDP */
 	body_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -230,8 +254,8 @@ static void simple_ctrl_body_task(void *pvParameters)
 				ESP_LOGI(TAG, "%s:%d has been connected (%d)", inet_ntoa(addr_in.sin_addr),
 					 ntohs(addr_in.sin_port), newconn);
 			} else {
-				ESP_LOGI(TAG, "socket < 0, exit body");
-				break;
+				ESP_LOGI(TAG, "newconn < 0, drop it");
+				continue;
 			}
 
 			for (index = 0; (index < BODY_TCP_MAX_ACCEPT) && (fds[index] != -1); index++);
@@ -245,15 +269,54 @@ static void simple_ctrl_body_task(void *pvParameters)
 		} else {
 			for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
 				if (fds[index] != -1 && FD_ISSET(fds[index], &readfds)) {
-					char buf[32];
-					int len = recv(fds[index], buf, sizeof(buf), 0);
-					if (len > 0) {
-						printf("recv: %d\n", len);
-						len = send(fds[index], buf, len, 0);
-						printf("send: %d\n", len);
+					/* Read control fields */
+					ret = recv(fds[index], buffer, 6, 0);
+					if (ret > 0) {
+						if (ret < 6) {
+							ESP_LOGW(TAG, "Control field size mismatch, closed (%d)", fds[index]);
+							goto closefd;
+						}
+
+						simple_ctrl_handle_reset(&handle);
+
+						/* Fill parameter */
+						handle.data_type = buffer[0];
+						handle.encryp_type = buffer[1];
+						handle.data_len = (buffer[2] << 0) |
+								  (buffer[3] << 8) |
+								  (buffer[4] << 16) |
+								  (buffer[5] << 24);
+						ESP_LOGI(TAG, "data_type:%02x, encryp_type:%02x, data_len:%lu",
+							 handle.data_type, handle.encryp_type, handle.data_len);
+
+						count = 0;
+						while (count < handle.data_len) {
+							size = handle.data_len > (uint32_t)sizeof(buffer) ?
+							       sizeof(buffer) : handle.data_len;
+							/* Read pack data */
+							ret = recv(fds[index], buffer, size, 0);
+							if (ret <= 0) {
+								ESP_LOGI(TAG, "Read exception, disconnected (%d)", fds[index]);
+								goto closefd;
+							}
+
+							count += ret;
+							ESP_LOGD(TAG, "Handle (%lu/%lu)", count, handle.data_len);
+
+							/* Handle data */
+							ret = simple_ctrl_handle_pad(&handle, buffer, ret, sizeof(buffer));
+							if (ret > 0) {
+								ret = send(fds[index], buffer, ret, 0);
+								ESP_LOGD(TAG, "Send result: %d", ret);
+							} else if (ret < 0) {
+								ESP_LOGI(TAG, "Handle exception, disconnected (%d)", fds[index]);
+								goto closefd;
+							}
+						}
 					} else {
+						ESP_LOGI(TAG, "ret <= 0, disconnected (%d)", fds[index]);
+closefd:
 						close(fds[index]);
-						ESP_LOGI(TAG, "len <= 0, disconnected (%d)", fds[index]);
 						fds[index] = -1;
 					}
 				}
@@ -262,6 +325,18 @@ static void simple_ctrl_body_task(void *pvParameters)
 	}
 
 	close(body_socket);
+
+}
+
+static void simple_ctrl_body_task(void *pvParameters)
+{
+	ESP_LOGI(TAG, "Ctrl Body Running");
+
+	while (1) {
+		simple_ctrl_body_handle();
+		vTaskDelay(pdMS_TO_TICKS(1000));
+	}
+
 	vTaskDelete(NULL);
 }
 
@@ -271,10 +346,10 @@ void simple_ctrl_init(void)
 	ESP_ERROR_CHECK(network_ready == NULL);
 
 	xTaskCreate(simple_ctrl_discover_task, "simple_ctrl_discover_task", 2048,
-		    NULL, tskIDLE_PRIORITY, NULL);
+		    NULL, tskIDLE_PRIORITY + 1, NULL);
 
 	xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 2048,
-		    NULL, tskIDLE_PRIORITY, NULL);
+		    NULL, tskIDLE_PRIORITY + 1, NULL);
 
 	event_bus_register(simple_ctrl_notify_callback);
 }

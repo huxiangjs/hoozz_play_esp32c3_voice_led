@@ -315,8 +315,8 @@ void audio_init(struct audio_handler *handler)
 	/* Start task */
 	vTaskDelay(1000 / portTICK_PERIOD_MS);
 	if (audio_hand.event)
-		xTaskCreate(audio_process_task, "audio_process_task", 4096, &audio_hand, 4, &audio_task_handle);
+		xTaskCreate(audio_process_task, "audio_process_task", 4096, &audio_hand, tskIDLE_PRIORITY + 1, &audio_task_handle);
 	else
 		ESP_LOGE(TAG, "No nedd to processing");
-	xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096, NULL, 5, &i2s_task_handle);
+	xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096, NULL, tskIDLE_PRIORITY, &i2s_task_handle);
 }
