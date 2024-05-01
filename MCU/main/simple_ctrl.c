@@ -59,9 +59,9 @@ struct simple_ctrl_handle {
 };
 
 static int discover_socket;
-static SemaphoreHandle_t network_ready;
+static TaskHandle_t discover_handle;
 
-static void simple_ctrl_do_discover(void)
+static void simple_ctrl_discover_handle(void)
 {
 	char buffer[DISCOVER_BUFFER_SIZE];
 	struct sockaddr_in addr_in;
@@ -69,6 +69,24 @@ static void simple_ctrl_do_discover(void)
 	int recv_len;
 	uint8_t count;
 	int ret;
+	int operate = 1;
+	struct sockaddr_in address;
+
+	/* Create UDP */
+	discover_socket = socket(AF_INET, SOCK_DGRAM, 0);
+	ESP_ERROR_CHECK(discover_socket < 0);
+
+	/* Allow binding address reuse */
+	setsockopt(discover_socket, SOL_SOCKET, SO_REUSEADDR, &operate, sizeof(operate));
+	/* Enable broadcast */
+	setsockopt(discover_socket, SOL_SOCKET, SO_BROADCAST, &operate, sizeof(operate));
+
+	/* Bind port */
+	address.sin_family = AF_INET;
+	address.sin_port = htons(DISCOVER_UDP_PORT);
+	address.sin_addr.s_addr = INADDR_ANY;
+	ret = bind(discover_socket, (struct sockaddr *)&address, sizeof (address));
+	ESP_ERROR_CHECK(ret < 0);
 
 	/* Full address */
 	addr_in.sin_family = AF_INET;
@@ -119,53 +137,23 @@ static void simple_ctrl_discover_task(void *pvParameters)
 
 	while (1) {
 		ESP_LOGI(TAG, "Wait network ready...");
-		xSemaphoreTake(network_ready, portMAX_DELAY);
+		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
 		ESP_LOGI(TAG, "Start discover...");
-		simple_ctrl_do_discover();
+		simple_ctrl_discover_handle();
 	}
 
 	vTaskDelete(NULL);
-}
-
-static void simple_ctrl_discover_init(void)
-{
-	int operate = 1;
-	struct sockaddr_in address;
-	int ret;
-
-	/* Create UDP */
-	discover_socket = socket(AF_INET, SOCK_DGRAM, 0);
-	ESP_ERROR_CHECK(discover_socket < 0);
-
-	/* Allow binding address reuse */
-	setsockopt(discover_socket, SOL_SOCKET, SO_REUSEADDR, &operate, sizeof(operate));
-	/* Enable broadcast */
-	setsockopt(discover_socket, SOL_SOCKET, SO_BROADCAST, &operate, sizeof(operate));
-
-	/* Bind port */
-	address.sin_family = AF_INET;
-	address.sin_port = htons(DISCOVER_UDP_PORT);
-	address.sin_addr.s_addr = INADDR_ANY;
-	ret = bind(discover_socket, (struct sockaddr *)&address, sizeof (address));
-	ESP_ERROR_CHECK(ret < 0);
-
-	xSemaphoreGive(network_ready);
-}
-
-static void simple_ctrl_discover_destroy(void)
-{
-	close(discover_socket);
 }
 
 static bool simple_ctrl_notify_callback(struct event_bus_msg *msg)
 {
 	switch (msg->type) {
 	case EVENT_BUS_WIFI_CONNECTED:
-		simple_ctrl_discover_init();
+		xTaskNotifyGive(discover_handle);
 		break;
 	case EVENT_BUS_WIFI_DISCONNECTED:
-		simple_ctrl_discover_destroy();
+		close(discover_socket);
 		break;
 	}
 
@@ -344,11 +332,8 @@ void simple_ctrl_init(void)
 {
 	int ret;
 
-	network_ready = xSemaphoreCreateBinary();
-	ESP_ERROR_CHECK(network_ready == NULL);
-
 	ret = xTaskCreate(simple_ctrl_discover_task, "simple_ctrl_discover_task", 2048,
-			  NULL, tskIDLE_PRIORITY + 1, NULL);
+			  NULL, tskIDLE_PRIORITY + 1, &discover_handle);
 	ESP_ERROR_CHECK(ret != pdPASS);
 
 	ret = xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 2048,
