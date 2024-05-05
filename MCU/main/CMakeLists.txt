@@ -11,6 +11,7 @@ idf_component_register(
 		"event_bus.c"
 		"recognition.cpp"
 		"simple_ctrl.c"
+		"encryp.c"
 
         INCLUDE_DIRS
 		"."

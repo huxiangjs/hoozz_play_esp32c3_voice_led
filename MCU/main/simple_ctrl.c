@@ -34,6 +34,7 @@
 #include <lwip/netdb.h>
 #include <esp_log.h>
 #include "event_bus.h"
+#include "encryp.h"
 
 static const char *TAG = "SIMPLE-CTRL";
 
@@ -51,8 +52,11 @@ static const char *TAG = "SIMPLE-CTRL";
 #define BODY_TCP_TIMEOUT		10
 
 #define CTRL_DATA_TYPE_PING		0x00
-#define CTRL_DATA_TYPE_QUERY		0x01
+#define CTRL_DATA_TYPE_REQUEST		0x01
 #define CTRL_DATA_TYPE_NOTIFY		0x02
+
+#define CTRL_DATA_HEADER		"HOOZZ"
+#define CTRL_DATA_HEADER_SIZE		(sizeof(CTRL_DATA_HEADER) - 1)
 
 struct simple_ctrl_handle {
 	uint8_t data_type;
@@ -167,11 +171,111 @@ static void simple_ctrl_handle_reset(struct simple_ctrl_handle *handle)
 	memset(handle, 0, sizeof(struct simple_ctrl_handle));
 }
 
+static int simple_ctrl_none_request(char *buffer, int buf_offs, int vaild_size, int buff_size)
+{
+	/* Do nothing */
+	return 0;
+}
+
+static int (*request_handle)(char *buffer, int buf_offs, int vaild_size, int buff_size)
+	= simple_ctrl_none_request;
+
+void simple_ctrl_request_register(int (*request)(char *buffer, int buf_offs, int vaild_size, int buff_size))
+{
+	request_handle = request;
+}
+
+static uint8_t encryp_type = ENCRYP_TYPE_NONE;
+
+void simple_ctrl_set_encryp_type(uint8_t type)
+{
+	encryp_type = type;
+}
+
 static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 				  char *buffer, int vaild_size, int buff_size)
 {
+	int ret;
 
-	return 0;
+	if (handle->encryp_type != encryp_type) {
+		ESP_LOGE(TAG, "Encryption method does not match");
+		return -1;
+	}
+
+	ret = decryp_do(handle->encryp_type, buffer, vaild_size, buff_size);
+	if (ret < 0)
+		return ret;
+	vaild_size = ret;
+
+	if ((ret < CTRL_DATA_HEADER_SIZE) ||
+	    memcmp(CTRL_DATA_HEADER, buffer, CTRL_DATA_HEADER_SIZE)) {
+		ESP_LOGE(TAG, "Data format is incorrect");
+		return -1;
+	}
+
+	switch (handle->data_type) {
+	case CTRL_DATA_TYPE_PING:
+		ret = 0;
+		break;
+	case CTRL_DATA_TYPE_REQUEST:
+		ret = request_handle(buffer, CTRL_DATA_HEADER_SIZE, vaild_size, buff_size);
+		break;
+	case CTRL_DATA_TYPE_NOTIFY:
+		ret = 0;
+		break;
+	}
+
+	return ret;
+}
+
+static volatile int fds[BODY_TCP_MAX_ACCEPT];
+
+void simple_ctrl_notify(char *buffer, int size)
+{
+	int index;
+	int ret;
+	uint8_t data_info[6];
+
+	ret = encryp_do(encryp_type, buffer, size, size);
+	if (ret < 0)
+		return;
+	size = ret;
+
+	data_info[0] = CTRL_DATA_TYPE_NOTIFY;
+	data_info[1] = encryp_type;
+	data_info[2] = (uint8_t)((size >> 0) & 0xff);
+	data_info[3] = (uint8_t)((size >> 8) & 0xff);
+	data_info[4] = (uint8_t)((size >> 16) & 0xff);
+	data_info[5] = (uint8_t)((size >> 24) & 0xff);
+
+	ESP_LOGD(TAG, "Data size: %d", size);
+
+	for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
+		if (fds[index] != -1) {
+			/* Send info */
+			ret = send(fds[index], data_info, sizeof(data_info), 0);
+			if (ret != sizeof(data_info)) {
+				ESP_LOGE(TAG, "Send data info fail: %d", ret);
+				continue;
+			}
+
+			/* Send header */
+			ret = send(fds[index], CTRL_DATA_HEADER, CTRL_DATA_HEADER_SIZE, 0);
+			if (ret != CTRL_DATA_HEADER_SIZE) {
+				ESP_LOGE(TAG, "Send data header fail: %d", ret);
+				continue;
+			}
+
+			/* Send data */
+			ret = send(fds[index], buffer, size, 0);
+			if (ret != size) {
+				ESP_LOGE(TAG, "Send data fail: %d", ret);
+				continue;
+			}
+
+			ESP_LOGI(TAG, "Notification completed (%d)", fds[index]);
+		}
+	}
 }
 
 static void simple_ctrl_body_handle(void)
@@ -183,7 +287,6 @@ static void simple_ctrl_body_handle(void)
 	struct sockaddr_in address;
 	struct sockaddr_in addr_in;
 	socklen_t addr_size = sizeof(addr_in);
-	int fds[BODY_TCP_MAX_ACCEPT];
 	int index;
 	int max_fd;
 	int newconn;

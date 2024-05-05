@@ -52,6 +52,22 @@ static void app_show_info(void)
 	ESP_LOGI(TAG, "Free heap size: %dbyte", size);
 }
 
+static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_size)
+{
+	return 0;
+}
+
+static void app_led_notify(uint32_t color)
+{
+	char rgb[3];
+
+	rgb[0] = (uint8_t)((color >> 0) & 0xff);
+	rgb[1] = (uint8_t)((color >> 8) & 0xff);
+	rgb[2] = (uint8_t)((color >> 16) & 0xff);
+
+	simple_ctrl_notify(rgb, sizeof(rgb));
+}
+
 static bool app_event_notify_callback(struct event_bus_msg *msg)
 {
 	switch (msg->type) {
@@ -80,6 +96,7 @@ static bool app_event_notify_callback(struct event_bus_msg *msg)
 		break;
 	case EVENT_BUS_LED_COLOR_UPDATED:
 		printf("Color updated\n");
+		app_led_notify(msg->param1);
 		break;
 	}
 
@@ -114,4 +131,6 @@ extern "C" void app_main(void)
 	allow_wifi_config = true;
 	vTaskDelay(pdMS_TO_TICKS(10000));
 	allow_wifi_config = false;
+
+	simple_ctrl_request_register(app_led_request);
 }

@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2024 Hoozz (huxiangjs)
+ * Copyright (c) 2024 huxiangjs
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,20 +22,23 @@
  * SOFTWARE.
  */
 
-#ifndef __SIMPLE_CTRL_H_
-#define __SIMPLE_CTRL_H_
+#ifndef __ENCRYP_H_
+#define __ENCRYP_H_
+
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void simple_ctrl_init(void);
-void simple_ctrl_request_register(int (*request)(char *buffer, int buf_offs, int vaild_size, int buff_size));
-void simple_ctrl_set_encryp_type(uint8_t type);
-void simple_ctrl_notify(char *buffer, int size);
+#define ENCRYP_TYPE_NONE		0x00
+#define ENCRYP_TYPE_MAX			0x01
+
+int encryp_do(uint8_t encryp_type, char *buffer, int vaild_size, int buff_size);
+int decryp_do(uint8_t encryp_type, char *buffer, int vaild_size, int buff_size);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __RECOGNITION_H_ */
+#endif /* __ENCRYP_H_ */
