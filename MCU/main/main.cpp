@@ -127,6 +127,7 @@ extern "C" void app_main(void)
 
 	/* Network ctrl */
 	simple_ctrl_init();
+	simple_ctrl_set_info_name("VOICE LED");
 
 	allow_wifi_config = true;
 	vTaskDelay(pdMS_TO_TICKS(10000));

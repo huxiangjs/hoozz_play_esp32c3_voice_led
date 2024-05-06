@@ -52,8 +52,15 @@ static const char *TAG = "SIMPLE-CTRL";
 #define BODY_TCP_TIMEOUT		10
 
 #define CTRL_DATA_TYPE_PING		0x00
-#define CTRL_DATA_TYPE_REQUEST		0x01
-#define CTRL_DATA_TYPE_NOTIFY		0x02
+#define CTRL_DATA_TYPE_INFO		0x01
+#define CTRL_DATA_TYPE_REQUEST		0x02
+#define CTRL_DATA_TYPE_NOTIFY		0x03
+
+#define CTRL_INFO_TYPE_GETNAME		0x00
+#define CTRL_INFO_TYPE_SETNAME		0x01
+
+#define CTRL_RETURN_OK			0x00
+#define CTRL_RETURN_FAIL		0x01
 
 #define CTRL_DATA_HEADER		"HOOZZ"
 #define CTRL_DATA_HEADER_SIZE		(sizeof(CTRL_DATA_HEADER) - 1)
@@ -192,6 +199,66 @@ void simple_ctrl_set_encryp_type(uint8_t type)
 	encryp_type = type;
 }
 
+#define INFO_NAME_SIZE			64
+static char info_name[INFO_NAME_SIZE] = "Unnamed";
+
+void simple_ctrl_set_info_name(const char *new_name)
+{
+	size_t len = strlen(new_name);
+	size_t copy_size;
+
+	copy_size = INFO_NAME_SIZE - 1;
+	copy_size = copy_size < len ? copy_size : len;
+
+	memcpy(info_name, new_name, copy_size);
+	info_name[copy_size] = '\0';
+}
+
+static int simple_ctrl_info(char *buffer, int buf_offs, int vaild_size, int buff_size)
+{
+	size_t len;
+	int ret = -1;
+	uint8_t info_cmd;
+
+	if (vaild_size < 1) {
+		ESP_LOGE(TAG, "Information command is incorrect");
+		return -1;
+	}
+
+	info_cmd = buffer[buf_offs];
+
+	switch (info_cmd) {
+	case CTRL_INFO_TYPE_GETNAME:
+		len = strlen(info_name);
+		if ((len + 2) > (buff_size - buf_offs)) {
+			ESP_LOGE(TAG, "Buffer does not have enough space");
+			return -1;
+		}
+		buffer[buf_offs + 1] = CTRL_RETURN_OK;
+		memcpy(buffer + buf_offs + 2, info_name, len);
+		ret = 2 + (int)len;
+		break;
+	case CTRL_INFO_TYPE_SETNAME:
+		len = vaild_size - 1;
+		if (len >= INFO_NAME_SIZE) {
+			buffer[buf_offs + 1] = CTRL_RETURN_FAIL;
+			ret = 2;
+		} else {
+			memcpy(info_name, buffer + buf_offs + 1, len);
+			info_name[len] = '\0';
+			buffer[buf_offs + 1] = CTRL_RETURN_OK;
+			ret = 2;
+		}
+		break;
+	default:
+		buffer[buf_offs + 1] = CTRL_RETURN_FAIL;
+		ret = 2;
+		break;
+	}
+
+	return ret;
+}
+
 static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 				  char *buffer, int vaild_size, int buff_size)
 {
@@ -212,10 +279,14 @@ static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 		ESP_LOGE(TAG, "Data format is incorrect");
 		return -1;
 	}
+	vaild_size -= CTRL_DATA_HEADER_SIZE;
 
 	switch (handle->data_type) {
 	case CTRL_DATA_TYPE_PING:
 		ret = 0;
+		break;
+	case CTRL_DATA_TYPE_INFO:
+		ret = simple_ctrl_info(buffer, CTRL_DATA_HEADER_SIZE, vaild_size, buff_size);
 		break;
 	case CTRL_DATA_TYPE_REQUEST:
 		ret = request_handle(buffer, CTRL_DATA_HEADER_SIZE, vaild_size, buff_size);
@@ -223,6 +294,11 @@ static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 	case CTRL_DATA_TYPE_NOTIFY:
 		ret = 0;
 		break;
+	}
+
+	if (ret > 0) {
+		ret += CTRL_DATA_HEADER_SIZE;
+		handle->data_len = (uint32_t)ret;
 	}
 
 	return ret;
@@ -409,8 +485,29 @@ static void simple_ctrl_body_handle(void)
 							/* Handle data */
 							ret = simple_ctrl_handle_pad(&handle, buffer, ret, sizeof(buffer));
 							if (ret > 0) {
-								ret = send(fds[index], buffer, ret, 0);
-								ESP_LOGD(TAG, "Send result: %d", ret);
+								uint8_t data_info[6];
+								int vaild_size = ret;
+
+								data_info[0] = handle.data_type;
+								data_info[1] = handle.encryp_type;
+								data_info[2] = (uint8_t)((handle.data_len >> 0) & 0xff);
+								data_info[3] = (uint8_t)((handle.data_len >> 8) & 0xff);
+								data_info[4] = (uint8_t)((handle.data_len >> 16) & 0xff);
+								data_info[5] = (uint8_t)((handle.data_len >> 24) & 0xff);
+
+								/* Send info */
+								ret = send(fds[index], data_info, sizeof(data_info), 0);
+								if (ret != sizeof(data_info)) {
+									ESP_LOGE(TAG, "Send data info fail: %d", ret);
+									goto closefd;
+								}
+
+								/* Send data */
+								ret = send(fds[index], buffer, vaild_size, 0);
+								if (ret != vaild_size) {
+									ESP_LOGE(TAG, "Send data info fail: %d", ret);
+									goto closefd;
+								}
 							} else if (ret < 0) {
 								ESP_LOGI(TAG, "Handle exception, disconnected (%d)", fds[index]);
 								goto closefd;
