@@ -35,6 +35,7 @@
 #include <esp_log.h>
 #include "event_bus.h"
 #include "encryp.h"
+#include "class_id.h"
 
 static const char *TAG = "SIMPLE-CTRL";
 
@@ -58,6 +59,7 @@ static const char *TAG = "SIMPLE-CTRL";
 
 #define CTRL_INFO_TYPE_GETNAME		0x00
 #define CTRL_INFO_TYPE_SETNAME		0x01
+#define CTRL_INFO_TYPE_GETCLASSID	0x02
 
 #define CTRL_RETURN_OK			0x00
 #define CTRL_RETURN_FAIL		0x01
@@ -199,6 +201,13 @@ void simple_ctrl_set_encryp_type(uint8_t type)
 	encryp_type = type;
 }
 
+static uint8_t class_id = CLASS_ID_UNKNOWN;
+
+void simple_ctrl_set_class_id(uint8_t new_id)
+{
+	class_id = new_id;
+}
+
 #define INFO_NAME_SIZE			64
 static char info_name[INFO_NAME_SIZE] = "Unnamed";
 
@@ -249,6 +258,15 @@ static int simple_ctrl_info(char *buffer, int buf_offs, int vaild_size, int buff
 			buffer[buf_offs + 1] = CTRL_RETURN_OK;
 			ret = 2;
 		}
+		break;
+	case CTRL_INFO_TYPE_GETCLASSID:
+		ret = 3;
+		if (ret > (buff_size - buf_offs)) {
+			ESP_LOGE(TAG, "Buffer does not have enough space");
+			return -1;
+		}
+		buffer[buf_offs + 1] = CTRL_RETURN_OK;
+		buffer[buf_offs + 2] = class_id;
 		break;
 	default:
 		buffer[buf_offs + 1] = CTRL_RETURN_FAIL;

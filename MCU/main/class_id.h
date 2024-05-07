@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2024 Hoozz (huxiangjs)
+ * Copyright (c) 2024 huxiangjs
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,24 +22,10 @@
  * SOFTWARE.
  */
 
-#ifndef __SIMPLE_CTRL_H_
-#define __SIMPLE_CTRL_H_
+#ifndef __CLASS_ID_H_
+#define __CLASS_ID_H_
 
-#include "class_id.h"
+#define CLASS_ID_UNKNOWN		0x00	/* Unknown class */
+#define CLASS_ID_VOICE_LED		0x01	/* Voice LED class */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void simple_ctrl_init(void);
-void simple_ctrl_request_register(int (*request)(char *buffer, int buf_offs, int vaild_size, int buff_size));
-void simple_ctrl_set_encryp_type(uint8_t type);
-void simple_ctrl_notify(char *buffer, int size);
-void simple_ctrl_set_info_name(const char *new_name);
-void simple_ctrl_set_class_id(uint8_t new_id);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* __RECOGNITION_H_ */
+#endif /* __CLASS_ID_H_ */
