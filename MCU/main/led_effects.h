@@ -35,7 +35,7 @@
 #define LED_EFFECTS_SMARTCONFIG		0x05	// Smart config
 #define LED_EFFECTS_UPGRADE		0x06	// Firmware update
 #define LED_EFFECTS_COLOR_PICK		0x07	// Pick color
-#define LED_EFFECTS_COLOR_FULL		0x08	// Fill color
+#define LED_EFFECTS_COLOR_FILL		0x08	// Fill color
 
 #ifdef __cplusplus
 extern "C" {

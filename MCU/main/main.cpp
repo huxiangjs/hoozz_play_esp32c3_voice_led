@@ -54,6 +54,19 @@ static void app_show_info(void)
 
 static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_size)
 {
+	uint32_t rgb = 0;
+
+	if (vaild_size != 3) {
+		ESP_LOGE(TAG, "Information command is incorrect");
+		return -1;
+	}
+
+	rgb |= buffer[buf_offs] << 0;
+	rgb |= buffer[buf_offs + 1] << 8;
+	rgb |= buffer[buf_offs + 2] << 16;
+
+	led_effects_play(LED_EFFECTS_COLOR_FILL, rgb);
+
 	return 0;
 }
 

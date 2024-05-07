@@ -163,7 +163,7 @@ static void led_effects_task(void *pvParameters)
 			effects_id = LED_EFFECTS_COLOR_PICK;
 			timeout = pdMS_TO_TICKS(50);
 			break;
-		case LED_EFFECTS_COLOR_FULL:
+		case LED_EFFECTS_COLOR_FILL:
 			color = update.color;
 			effects_id = LED_EFFECTS_NONE;
 			timeout = portMAX_DELAY;
