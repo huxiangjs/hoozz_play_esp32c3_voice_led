@@ -33,17 +33,22 @@
 #include <lwip/dns.h>
 #include <lwip/netdb.h>
 #include <esp_log.h>
+#include <esp_mac.h>
 #include "event_bus.h"
 #include "encryp.h"
 #include "class_id.h"
 
 static const char *TAG = "SIMPLE-CTRL";
 
+#define SIMPLE_CTRL_INFO_ID_LENGTH	14
+#define SIMPLE_CTRL_INFO_ID_DEFAULT	"00000000000000"
+#define SIMPLE_CTRL_INFO_NAME_LENGTH	64
+#define SIMPLE_CTRL_INFO_NAME_DEFAULT	"Unnamed"
+
 #define DISCOVER_UDP_PORT		54542
 #define DISCOVER_SAY			"HOOZZ?"
-#define DISCOVER_ONLINE_SAY		"HOOZZ!"
-#define DISCOVER_RESPOND		"YES"
-#define DISCOVER_BUFFER_SIZE		16
+#define DISCOVER_RESPOND		"HOOZZ:"
+#define DISCOVER_BUFFER_SIZE		(sizeof(DISCOVER_RESPOND) + SIMPLE_CTRL_INFO_ID_LENGTH + SIMPLE_CTRL_INFO_NAME_LENGTH)
 #define DISCOVER_BROADCAST_NUM		40
 #define DISCOVER_BROADCAST_ADDRESS	"255.255.255.255"
 
@@ -75,6 +80,27 @@ struct simple_ctrl_handle {
 
 static int discover_socket;
 static TaskHandle_t discover_handle;
+
+static char info_name[SIMPLE_CTRL_INFO_NAME_LENGTH + 1] = SIMPLE_CTRL_INFO_NAME_DEFAULT;
+static uint8_t info_class_id = CLASS_ID_UNKNOWN;
+static char info_id[SIMPLE_CTRL_INFO_ID_LENGTH + 1] = SIMPLE_CTRL_INFO_ID_DEFAULT;
+
+static void simple_ctrl_init_info_id(void)
+{
+	uint8_t mac[6];
+
+	ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK);
+	sprintf(info_id, "%02x%02x%02x%02x%02x%02x%02x",
+		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], 0);
+
+	ESP_LOGI(TAG, "ID(%s)", info_id);
+}
+
+static inline void simple_ctrl_discover_set_respond(char *buf, size_t buf_size)
+{
+	/* |----MAGIC(6bytes)----|----ID(14bytes)----|----NAME(nbytes)----| */
+	snprintf(buf, buf_size, "%s%s%s", DISCOVER_RESPOND, info_id, info_name);
+}
 
 static void simple_ctrl_discover_handle(void)
 {
@@ -111,7 +137,7 @@ static void simple_ctrl_discover_handle(void)
 	ESP_ERROR_CHECK(ret < 0);
 	count = DISCOVER_BROADCAST_NUM;
 	while (count--) {
-		snprintf(buffer, sizeof(buffer), DISCOVER_ONLINE_SAY);
+		simple_ctrl_discover_set_respond(buffer, sizeof(buffer));
 		sendto(discover_socket, buffer, strlen(buffer), 0,
 		       (struct sockaddr*)&addr_in, addr_size);
 		vTaskDelay(pdMS_TO_TICKS(100));
@@ -134,7 +160,7 @@ static void simple_ctrl_discover_handle(void)
 
 			/* If the flag is discover, then respond */
 			if(!strcmp(buffer, DISCOVER_SAY)) {
-				snprintf(buffer, sizeof(buffer), DISCOVER_RESPOND);
+				simple_ctrl_discover_set_respond(buffer, sizeof(buffer));
 				sendto(discover_socket, buffer, strlen(buffer), 0,
 				       (struct sockaddr*)&addr_in, addr_size);
 				ESP_LOGI(TAG, "discover has responded");
@@ -201,22 +227,17 @@ void simple_ctrl_set_encryp_type(uint8_t type)
 	encryp_type = type;
 }
 
-static uint8_t class_id = CLASS_ID_UNKNOWN;
-
 void simple_ctrl_set_class_id(uint8_t new_id)
 {
-	class_id = new_id;
+	info_class_id = new_id;
 }
 
-#define INFO_NAME_SIZE			64
-static char info_name[INFO_NAME_SIZE] = "Unnamed";
-
-void simple_ctrl_set_info_name(const char *new_name)
+void simple_ctrl_set_name(const char *new_name)
 {
 	size_t len = strlen(new_name);
 	size_t copy_size;
 
-	copy_size = INFO_NAME_SIZE - 1;
+	copy_size = SIMPLE_CTRL_INFO_NAME_LENGTH;
 	copy_size = copy_size < len ? copy_size : len;
 
 	memcpy(info_name, new_name, copy_size);
@@ -249,7 +270,7 @@ static int simple_ctrl_info(char *buffer, int buf_offs, int vaild_size, int buff
 		break;
 	case CTRL_INFO_TYPE_SETNAME:
 		len = vaild_size - 1;
-		if (len >= INFO_NAME_SIZE) {
+		if (len > SIMPLE_CTRL_INFO_NAME_LENGTH) {
 			buffer[buf_offs + 1] = CTRL_RETURN_FAIL;
 			ret = 2;
 		} else {
@@ -266,7 +287,7 @@ static int simple_ctrl_info(char *buffer, int buf_offs, int vaild_size, int buff
 			return -1;
 		}
 		buffer[buf_offs + 1] = CTRL_RETURN_OK;
-		buffer[buf_offs + 2] = class_id;
+		buffer[buf_offs + 2] = info_class_id;
 		break;
 	default:
 		buffer[buf_offs + 1] = CTRL_RETURN_FAIL;
@@ -563,6 +584,8 @@ static void simple_ctrl_body_task(void *pvParameters)
 void simple_ctrl_init(void)
 {
 	int ret;
+
+	simple_ctrl_init_info_id();
 
 	ret = xTaskCreate(simple_ctrl_discover_task, "simple_ctrl_discover_task", 2048,
 			  NULL, tskIDLE_PRIORITY + 1, &discover_handle);
