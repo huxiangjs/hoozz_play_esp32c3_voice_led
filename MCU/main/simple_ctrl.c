@@ -48,7 +48,7 @@ static const char *TAG = "SIMPLE-CTRL";
 #define DISCOVER_UDP_PORT		54542
 #define DISCOVER_SAY			"HOOZZ?"
 #define DISCOVER_RESPOND		"HOOZZ:"
-#define DISCOVER_BUFFER_SIZE		(sizeof(DISCOVER_RESPOND) + SIMPLE_CTRL_INFO_ID_LENGTH + SIMPLE_CTRL_INFO_NAME_LENGTH)
+#define DISCOVER_BUFFER_SIZE		(sizeof(DISCOVER_RESPOND) + 2 + SIMPLE_CTRL_INFO_ID_LENGTH + SIMPLE_CTRL_INFO_NAME_LENGTH)
 #define DISCOVER_BROADCAST_NUM		40
 #define DISCOVER_BROADCAST_ADDRESS	"255.255.255.255"
 
@@ -98,8 +98,8 @@ static void simple_ctrl_init_info_id(void)
 
 static inline void simple_ctrl_discover_set_respond(char *buf, size_t buf_size)
 {
-	/* |----MAGIC(6bytes)----|----ID(14bytes)----|----NAME(nbytes)----| */
-	snprintf(buf, buf_size, "%s%s%s", DISCOVER_RESPOND, info_id, info_name);
+	/* |--MAGIC(6bytes)--|--CLASS(2byte)--|--ID(14bytes)--|--NAME(nbytes)--| */
+	snprintf(buf, buf_size, "%s%02x%s%s", DISCOVER_RESPOND, info_class_id, info_id, info_name);
 }
 
 static void simple_ctrl_discover_handle(void)
