@@ -350,20 +350,22 @@ void simple_ctrl_notify(char *buffer, int size)
 	int index;
 	int ret;
 	uint8_t data_info[6];
+	int data_size;
 
 	ret = encryp_do(encryp_type, buffer, size, size);
 	if (ret < 0)
 		return;
 	size = ret;
+	data_size = size + CTRL_DATA_HEADER_SIZE;	// TODO: enable encryp
 
 	data_info[0] = CTRL_DATA_TYPE_NOTIFY;
 	data_info[1] = encryp_type;
-	data_info[2] = (uint8_t)((size >> 0) & 0xff);
-	data_info[3] = (uint8_t)((size >> 8) & 0xff);
-	data_info[4] = (uint8_t)((size >> 16) & 0xff);
-	data_info[5] = (uint8_t)((size >> 24) & 0xff);
+	data_info[2] = (uint8_t)((data_size >> 0) & 0xff);
+	data_info[3] = (uint8_t)((data_size >> 8) & 0xff);
+	data_info[4] = (uint8_t)((data_size >> 16) & 0xff);
+	data_info[5] = (uint8_t)((data_size >> 24) & 0xff);
 
-	ESP_LOGD(TAG, "Data size: %d", size);
+	ESP_LOGD(TAG, "Data size: %d", data_size);
 
 	for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
 		if (fds[index] != -1) {
