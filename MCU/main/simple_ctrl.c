@@ -246,6 +246,25 @@ void simple_ctrl_set_name(const char *new_name)
 	info_name[copy_size] = '\0';
 }
 
+static int simple_ctrl_ping(char *buffer, int buf_offs, int vaild_size, int buff_size)
+{
+	int ret = -1;
+	uint8_t ping_interval;
+
+	if (vaild_size != 1) {
+		ESP_LOGE(TAG, "Ping command is incorrect");
+		return -1;
+	}
+
+	ping_interval = buffer[buf_offs];
+	ESP_LOGD(TAG, "Remote ping interval: %u\n", ping_interval);
+
+	buffer[buf_offs] = CTRL_RETURN_OK;
+	ret = 1;
+
+	return ret;
+}
+
 static int simple_ctrl_info(char *buffer, int buf_offs, int vaild_size, int buff_size)
 {
 	size_t len;
@@ -324,7 +343,7 @@ static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 
 	switch (handle->data_type) {
 	case CTRL_DATA_TYPE_PING:
-		ret = 0;
+		ret = simple_ctrl_ping(buffer, CTRL_DATA_HEADER_SIZE, vaild_size, buff_size);
 		break;
 	case CTRL_DATA_TYPE_INFO:
 		ret = simple_ctrl_info(buffer, CTRL_DATA_HEADER_SIZE, vaild_size, buff_size);
