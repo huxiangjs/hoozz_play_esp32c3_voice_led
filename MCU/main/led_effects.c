@@ -88,6 +88,33 @@ static __MAYBE_UNUSED uint32_t led_effects_color_pick_step(void)
 	return (uint32_t)((red << 16) | (green << 8) | (blue << 0));
 }
 
+#define COLOR_GRADIENT_STEP_SIZE	5
+
+static __MAYBE_UNUSED uint32_t led_effects_color_gradient_step(uint32_t expect, uint32_t current)
+{
+	uint8_t expect_rgb[3];
+	uint8_t current_rgb[3];
+	uint8_t step_size;
+	uint8_t index;
+
+	for (index = 0; index < 3; index++) {
+		expect_rgb[index] = (uint8_t)((expect >> (index << 3)) & 0xff);
+		current_rgb[index] = (uint8_t)((current >> (index << 3)) & 0xff);
+
+		if (current_rgb[index] > expect_rgb[index]) {
+			step_size = current_rgb[index] - expect_rgb[index];
+			step_size = step_size > COLOR_GRADIENT_STEP_SIZE ? COLOR_GRADIENT_STEP_SIZE : step_size;
+			current_rgb[index] -= step_size;
+		} else if (current_rgb[index] < expect_rgb[index]) {
+			step_size = expect_rgb[index] - current_rgb[index];
+			step_size = step_size > COLOR_GRADIENT_STEP_SIZE ? COLOR_GRADIENT_STEP_SIZE : step_size;
+			current_rgb[index] += step_size;
+		}
+	}
+
+	return (uint32_t)((current_rgb[0] << 0) | (current_rgb[1] << 8) | (current_rgb[2] << 16));
+}
+
 static bool led_event_notify_callback(struct event_bus_msg *msg)
 {
 	switch (msg->type) {
@@ -167,6 +194,16 @@ static void led_effects_task(void *pvParameters)
 			color = update.color;
 			effects_id = LED_EFFECTS_NONE;
 			timeout = portMAX_DELAY;
+			break;
+		case LED_EFFECTS_COLOR_GRADIENT:
+			color = led_effects_color_gradient_step(update.color, color);
+			if (color != update.color) {
+				effects_id = LED_EFFECTS_COLOR_GRADIENT;
+				timeout = pdMS_TO_TICKS(40);
+			} else {
+				effects_id = LED_EFFECTS_NONE;
+				timeout = portMAX_DELAY;
+			}
 			break;
 		}
 

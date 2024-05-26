@@ -36,6 +36,7 @@
 #define LED_EFFECTS_UPGRADE		0x06	// Firmware update
 #define LED_EFFECTS_COLOR_PICK		0x07	// Pick color
 #define LED_EFFECTS_COLOR_FILL		0x08	// Fill color
+#define LED_EFFECTS_COLOR_GRADIENT	0x09	// Gradient color
 
 #ifdef __cplusplus
 extern "C" {

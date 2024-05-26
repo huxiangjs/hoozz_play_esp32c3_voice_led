@@ -78,7 +78,8 @@ static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_
 		rgb |= buffer[buf_offs + 1] << 0;
 		rgb |= buffer[buf_offs + 2] << 8;
 		rgb |= buffer[buf_offs + 3] << 16;
-		led_effects_play(LED_EFFECTS_COLOR_FILL, rgb);
+		// led_effects_play(LED_EFFECTS_COLOR_FILL, rgb);
+		led_effects_play(LED_EFFECTS_COLOR_GRADIENT, rgb);
 		ESP_LOGI(TAG, "Set color: #%06x", (unsigned int)rgb);
 		/* Set return (2byte) */
 		buffer[buf_offs + 1] = LED_RESULT_OK;
