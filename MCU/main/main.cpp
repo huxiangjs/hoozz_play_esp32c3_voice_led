@@ -44,6 +44,13 @@
 static const char *TAG = "APP-MAIN";
 
 static bool allow_wifi_config;
+static uint32_t last_color;
+
+#define LED_CMD_SET_COLOR		0x00
+#define LED_CMD_GET_COLOR		0x01
+
+#define LED_RESULT_OK			0x00
+#define LED_RESULT_FAIL			0x01
 
 static void app_show_info(void)
 {
@@ -56,16 +63,38 @@ static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_
 {
 	uint32_t rgb = 0;
 
-	if (vaild_size != 3) {
+	if (vaild_size < 1) {
 		ESP_LOGE(TAG, "Information command is incorrect");
 		return -1;
 	}
 
-	rgb |= buffer[buf_offs] << 0;
-	rgb |= buffer[buf_offs + 1] << 8;
-	rgb |= buffer[buf_offs + 2] << 16;
+	if (buff_size - buf_offs < 5) {
+		ESP_LOGE(TAG, "Not enough buffer space");
+		return -1;
+	}
 
-	led_effects_play(LED_EFFECTS_COLOR_FILL, rgb);
+	if (buffer[buf_offs] == LED_CMD_SET_COLOR && vaild_size == 4) {
+		/* Set color */
+		rgb |= buffer[buf_offs + 1] << 0;
+		rgb |= buffer[buf_offs + 2] << 8;
+		rgb |= buffer[buf_offs + 3] << 16;
+		led_effects_play(LED_EFFECTS_COLOR_FILL, rgb);
+		ESP_LOGI(TAG, "Set color: #%06x", (unsigned int)rgb);
+		/* Set return (2byte) */
+		buffer[buf_offs + 1] = LED_RESULT_OK;
+		return 2;
+	} else if (buffer[buf_offs] == LED_CMD_GET_COLOR && vaild_size == 1) {
+		ESP_LOGI(TAG, "Get color: #%06x", (unsigned int)last_color);
+		/* Set return (5byte) */
+		buffer[buf_offs + 1] = LED_RESULT_OK;
+		buffer[buf_offs + 2] = (uint8_t)((last_color >> 0) & 0xff);
+		buffer[buf_offs + 3] = (uint8_t)((last_color >> 8) & 0xff);
+		buffer[buf_offs + 4] = (uint8_t)((last_color >> 16) & 0xff);
+		return 5;
+	} else {
+		ESP_LOGE(TAG, "Lllegal command");
+		return -1;
+	}
 
 	return 0;
 }
@@ -73,6 +102,8 @@ static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_
 static void app_led_notify(uint32_t color)
 {
 	char rgb[3];
+
+	last_color = color;
 
 	rgb[0] = (uint8_t)((color >> 0) & 0xff);
 	rgb[1] = (uint8_t)((color >> 8) & 0xff);

@@ -76,10 +76,12 @@ struct simple_ctrl_handle {
 	uint8_t data_type;
 	uint8_t encryp_type;
 	uint32_t data_len;
+	uint32_t ret_len;
 };
 
 static int discover_socket;
 static TaskHandle_t discover_handle;
+static SemaphoreHandle_t send_mutex;
 
 static char info_name[SIMPLE_CTRL_INFO_NAME_LENGTH + 1] = SIMPLE_CTRL_INFO_NAME_DEFAULT;
 static uint8_t info_class_id = CLASS_ID_UNKNOWN;
@@ -335,9 +337,11 @@ static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 		break;
 	}
 
+	handle->ret_len = 0;
+
 	if (ret > 0) {
 		ret += CTRL_DATA_HEADER_SIZE;
-		handle->data_len = (uint32_t)ret;
+		handle->ret_len = (uint32_t)ret;
 	}
 
 	return ret;
@@ -369,6 +373,8 @@ void simple_ctrl_notify(char *buffer, int size)
 
 	for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
 		if (fds[index] != -1) {
+			xSemaphoreTake(send_mutex, portMAX_DELAY);
+
 			/* Send info */
 			ret = send(fds[index], data_info, sizeof(data_info), 0);
 			if (ret != sizeof(data_info)) {
@@ -389,6 +395,8 @@ void simple_ctrl_notify(char *buffer, int size)
 				ESP_LOGE(TAG, "Send data fail: %d", ret);
 				continue;
 			}
+
+			xSemaphoreGive(send_mutex);
 
 			ESP_LOGI(TAG, "Notification completed (%d)", fds[index]);
 		}
@@ -519,6 +527,7 @@ static void simple_ctrl_body_handle(void)
 								ESP_LOGI(TAG, "Read exception or timeout, disconnected (%d)", fds[index]);
 								goto closefd;
 							}
+							ESP_LOGD(TAG, "Expect: %lu; Result: %d", size, ret);
 
 							count += ret;
 							ESP_LOGD(TAG, "Handle (%lu/%lu)", count, handle.data_len);
@@ -531,10 +540,12 @@ static void simple_ctrl_body_handle(void)
 
 								data_info[0] = handle.data_type;
 								data_info[1] = handle.encryp_type;
-								data_info[2] = (uint8_t)((handle.data_len >> 0) & 0xff);
-								data_info[3] = (uint8_t)((handle.data_len >> 8) & 0xff);
-								data_info[4] = (uint8_t)((handle.data_len >> 16) & 0xff);
-								data_info[5] = (uint8_t)((handle.data_len >> 24) & 0xff);
+								data_info[2] = (uint8_t)((handle.ret_len >> 0) & 0xff);
+								data_info[3] = (uint8_t)((handle.ret_len >> 8) & 0xff);
+								data_info[4] = (uint8_t)((handle.ret_len >> 16) & 0xff);
+								data_info[5] = (uint8_t)((handle.ret_len >> 24) & 0xff);
+
+								xSemaphoreTake(send_mutex, portMAX_DELAY);
 
 								/* Send info */
 								ret = send(fds[index], data_info, sizeof(data_info), 0);
@@ -549,6 +560,8 @@ static void simple_ctrl_body_handle(void)
 									ESP_LOGE(TAG, "Send data info fail: %d", ret);
 									goto closefd;
 								}
+
+								xSemaphoreGive(send_mutex);
 							} else if (ret < 0) {
 								ESP_LOGI(TAG, "Handle exception, disconnected (%d)", fds[index]);
 								goto closefd;
@@ -593,6 +606,7 @@ void simple_ctrl_init(void)
 			  NULL, tskIDLE_PRIORITY + 1, &discover_handle);
 	ESP_ERROR_CHECK(ret != pdPASS);
 
+	send_mutex = xSemaphoreCreateMutex();
 	ret = xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 2048,
 			  NULL, tskIDLE_PRIORITY + 1, NULL);
 	ESP_ERROR_CHECK(ret != pdPASS);
