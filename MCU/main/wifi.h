@@ -33,6 +33,7 @@ extern "C" {
 
 void wifi_smartconfig(void);
 void wifi_init(void);
+void wifi_connect(void);
 
 #ifdef __cplusplus
 }

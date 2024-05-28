@@ -43,7 +43,8 @@
 
 static const char *TAG = "APP-MAIN";
 
-static bool allow_wifi_config;
+static TaskHandle_t main_handle;
+static volatile bool allow_wifi_config;
 static uint32_t last_color;
 
 #define LED_CMD_SET_COLOR		0x00
@@ -127,20 +128,20 @@ static bool app_event_notify_callback(struct event_bus_msg *msg)
 			ESP_LOGI(TAG, "Allow wifi config");
 			if (msg->param1 == 1) {
 				allow_wifi_config = false;
-				wifi_smartconfig();
+				xTaskNotifyGive(main_handle);
 			}
 		} else {
 			if (msg->param1 == 1) {
 				led_effects_play(LED_EFFECTS_ALL_ON, 0);
-				printf("LED ON\n");
+				ESP_LOGI(TAG, "LED ON");
 			} else {
 				led_effects_play(LED_EFFECTS_ALL_OFF, 0);
-				printf("LED OFF\n");
+				ESP_LOGI(TAG, "LED OFF");
 			}
 		}
 		break;
 	case EVENT_BUS_LED_COLOR_UPDATED:
-		printf("Color updated\n");
+		ESP_LOGD(TAG, "Color updated");
 		app_led_notify(msg->param1);
 		break;
 	}
@@ -154,6 +155,8 @@ extern "C" void app_main(void)
 
 	app_show_info();
 	ESP_ERROR_CHECK(nvs_flash_init());
+
+	main_handle = xTaskGetCurrentTaskHandle();
 
 	/* Event bus */
 	event_bus_init();
@@ -174,10 +177,14 @@ extern "C" void app_main(void)
 	simple_ctrl_init();
 	simple_ctrl_set_name("VOICE LED");
 	simple_ctrl_set_class_id(CLASS_ID_VOICE_LED);
+	simple_ctrl_request_register(app_led_request);
 
 	allow_wifi_config = true;
-	vTaskDelay(pdMS_TO_TICKS(10000));
-	allow_wifi_config = false;
-
-	simple_ctrl_request_register(app_led_request);
+	ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(8000));
+	if (allow_wifi_config == true) {
+		allow_wifi_config = false;
+		wifi_connect();
+	} else {
+		wifi_smartconfig();
+	}
 }

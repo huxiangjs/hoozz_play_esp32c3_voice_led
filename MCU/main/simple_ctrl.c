@@ -55,7 +55,7 @@ static const char *TAG = "SIMPLE-CTRL";
 #define BODY_TCP_PORT			DISCOVER_UDP_PORT
 #define BODY_TCP_MAX_ACCEPT		5
 #define BODY_TCP_BUFFER_SIZE		128
-#define BODY_TCP_TIMEOUT		10
+#define BODY_TCP_TIMEOUT		30
 
 #define CTRL_DATA_TYPE_PING		0x00
 #define CTRL_DATA_TYPE_INFO		0x01
@@ -417,7 +417,7 @@ void simple_ctrl_notify(char *buffer, int size)
 
 			xSemaphoreGive(send_mutex);
 
-			ESP_LOGI(TAG, "Notification completed (%d)", fds[index]);
+			ESP_LOGD(TAG, "Notification completed (%d)", fds[index]);
 		}
 	}
 }
@@ -533,7 +533,7 @@ static void simple_ctrl_body_handle(void)
 								  (buffer[3] << 8) |
 								  (buffer[4] << 16) |
 								  (buffer[5] << 24);
-						ESP_LOGI(TAG, "data_type:%02x, encryp_type:%02x, data_len:%lu",
+						ESP_LOGI(TAG, "(%d) data_type:%02x, encryp_type:%02x, data_len:%lu", fds[index],
 							 handle.data_type, handle.encryp_type, handle.data_len);
 
 						count = 0;
@@ -546,10 +546,10 @@ static void simple_ctrl_body_handle(void)
 								ESP_LOGI(TAG, "Read exception or timeout, disconnected (%d)", fds[index]);
 								goto closefd;
 							}
-							ESP_LOGD(TAG, "Expect: %lu; Result: %d", size, ret);
+							ESP_LOGD(TAG, "(%d) Expect: %lu; Result: %d", fds[index], size, ret);
 
 							count += ret;
-							ESP_LOGD(TAG, "Handle (%lu/%lu)", count, handle.data_len);
+							ESP_LOGD(TAG, "(%d) Handle [%lu/%lu]", fds[index], count, handle.data_len);
 
 							/* Handle data */
 							ret = simple_ctrl_handle_pad(&handle, buffer, ret, sizeof(buffer));
@@ -569,16 +569,18 @@ static void simple_ctrl_body_handle(void)
 								/* Send info */
 								ret = send(fds[index], data_info, sizeof(data_info), 0);
 								if (ret != sizeof(data_info)) {
-									ESP_LOGE(TAG, "Send data info fail: %d", ret);
+									ESP_LOGE(TAG, "(%d) Send data info fail: %d", fds[index], ret);
 									goto closefd;
 								}
+								ESP_LOGD(TAG, "(%d) Send info: %d", fds[index], ret);
 
 								/* Send data */
 								ret = send(fds[index], buffer, vaild_size, 0);
 								if (ret != vaild_size) {
-									ESP_LOGE(TAG, "Send data info fail: %d", ret);
+									ESP_LOGE(TAG, "(%d) Send data info fail: %d", fds[index], ret);
 									goto closefd;
 								}
+								ESP_LOGD(TAG, "(%d) Send data: %d", fds[index], ret);
 
 								xSemaphoreGive(send_mutex);
 							} else if (ret < 0) {
@@ -586,6 +588,8 @@ static void simple_ctrl_body_handle(void)
 								goto closefd;
 							}
 						}
+
+						ESP_LOGI(TAG, "(%d) Handle done", fds[index]);
 					} else {
 						ESP_LOGI(TAG, "Read exception or timeout, disconnected (%d)", fds[index]);
 						goto closefd;

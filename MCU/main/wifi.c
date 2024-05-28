@@ -52,7 +52,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 
 	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
 		/* Connect to the last saved network */
-		esp_wifi_connect();
+		// esp_wifi_connect();
 		ESP_LOGI(TAG, "Station start");
 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
 		// ESP_LOGI(TAG, "Station disconnected from AP");
@@ -158,4 +158,9 @@ void wifi_init(void)
 
 	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 	ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+void wifi_connect(void)
+{
+	esp_wifi_connect();
 }
