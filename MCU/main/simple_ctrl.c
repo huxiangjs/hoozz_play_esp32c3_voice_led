@@ -398,6 +398,7 @@ void simple_ctrl_notify(char *buffer, int size)
 			ret = send(fds[index], data_info, sizeof(data_info), 0);
 			if (ret != sizeof(data_info)) {
 				ESP_LOGE(TAG, "Send data info fail: %d", ret);
+				xSemaphoreGive(send_mutex);
 				continue;
 			}
 
@@ -405,6 +406,7 @@ void simple_ctrl_notify(char *buffer, int size)
 			ret = send(fds[index], CTRL_DATA_HEADER, CTRL_DATA_HEADER_SIZE, 0);
 			if (ret != CTRL_DATA_HEADER_SIZE) {
 				ESP_LOGE(TAG, "Send data header fail: %d", ret);
+				xSemaphoreGive(send_mutex);
 				continue;
 			}
 
@@ -412,6 +414,7 @@ void simple_ctrl_notify(char *buffer, int size)
 			ret = send(fds[index], buffer, size, 0);
 			if (ret != size) {
 				ESP_LOGE(TAG, "Send data fail: %d", ret);
+				xSemaphoreGive(send_mutex);
 				continue;
 			}
 
@@ -570,6 +573,7 @@ static void simple_ctrl_body_handle(void)
 								ret = send(fds[index], data_info, sizeof(data_info), 0);
 								if (ret != sizeof(data_info)) {
 									ESP_LOGE(TAG, "(%d) Send data info fail: %d", fds[index], ret);
+									xSemaphoreGive(send_mutex);
 									goto closefd;
 								}
 								ESP_LOGD(TAG, "(%d) Send info: %d", fds[index], ret);
@@ -578,6 +582,7 @@ static void simple_ctrl_body_handle(void)
 								ret = send(fds[index], buffer, vaild_size, 0);
 								if (ret != vaild_size) {
 									ESP_LOGE(TAG, "(%d) Send data info fail: %d", fds[index], ret);
+									xSemaphoreGive(send_mutex);
 									goto closefd;
 								}
 								ESP_LOGD(TAG, "(%d) Send data: %d", fds[index], ret);
