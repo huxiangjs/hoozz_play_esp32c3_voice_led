@@ -630,7 +630,7 @@ void simple_ctrl_init(void)
 	ESP_ERROR_CHECK(ret != pdPASS);
 
 	send_mutex = xSemaphoreCreateMutex();
-	ret = xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 2048,
+	ret = xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 4096,
 			  NULL, tskIDLE_PRIORITY + 1, NULL);
 	ESP_ERROR_CHECK(ret != pdPASS);
 
