@@ -325,6 +325,6 @@ void audio_init(struct audio_handler *handler)
 	}
 
 	ret = xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096,
-			  NULL, tskIDLE_PRIORITY, &i2s_task_handle);
+			  NULL, tskIDLE_PRIORITY + 1, &i2s_task_handle);
 	ESP_ERROR_CHECK(ret != pdPASS);
 }

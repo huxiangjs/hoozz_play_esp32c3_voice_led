@@ -113,6 +113,6 @@ void event_bus_init(void)
 	register_mutex = xSemaphoreCreateMutex();
 
 	/* Start task */
-	ret = xTaskCreate(event_bus_task, "event_bus_task", 2048, NULL, tskIDLE_PRIORITY, NULL);
+	ret = xTaskCreate(event_bus_task, "event_bus_task", 2048, NULL, tskIDLE_PRIORITY + 2, NULL);
 	ESP_ERROR_CHECK(ret != pdPASS);
 }

@@ -631,12 +631,12 @@ void simple_ctrl_init(void)
 	simple_ctrl_init_info_id();
 
 	ret = xTaskCreate(simple_ctrl_discover_task, "simple_ctrl_discover_task", 2048,
-			  NULL, tskIDLE_PRIORITY + 1, &discover_handle);
+			  NULL, tskIDLE_PRIORITY + 2, &discover_handle);
 	ESP_ERROR_CHECK(ret != pdPASS);
 
 	send_mutex = xSemaphoreCreateMutex();
 	ret = xTaskCreate(simple_ctrl_body_task, "simple_ctrl_body_task", 4096,
-			  NULL, tskIDLE_PRIORITY + 1, NULL);
+			  NULL, tskIDLE_PRIORITY + 2, NULL);
 	ESP_ERROR_CHECK(ret != pdPASS);
 
 	event_bus_register(simple_ctrl_notify_callback);
