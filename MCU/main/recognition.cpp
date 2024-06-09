@@ -39,12 +39,12 @@
 #include <cstdint>
 #include <iterator>
 #include "tensorflow/lite/core/c/common.h"
-#include "micro_model_settings.h"
 #include "models/audio_preprocessor_int8_model_data.h"
-#include "models/micro_speech_quantized_model_data.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_log.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
+
+#include "model_config.h"
 
 static const char *TAG = "RECOGNITION";
 
@@ -57,8 +57,8 @@ alignas(16) uint8_t g_arena[kArenaSize];
 using Features = int8_t[kFeatureCount][kFeatureSize];
 Features g_features;
 
-constexpr int kAudioSampleDurationCount = kFeatureDurationMs * kAudioSampleFrequency / 1000;
-constexpr int kAudioSampleStrideCount = kFeatureStrideMs * kAudioSampleFrequency / 1000;
+constexpr int kAudioSampleDurationCount = kFeatureDurationMs * tflite_model_audio_sample_frequency / 1000;
+constexpr int kAudioSampleStrideCount = kFeatureStrideMs * tflite_model_audio_sample_frequency / 1000;
 
 using MicroSpeechOpResolver = tflite::MicroMutableOpResolver<4>;
 using AudioPreprocessorOpResolver = tflite::MicroMutableOpResolver<18>;
@@ -138,9 +138,11 @@ TfLiteStatus RegisterOps(AudioPreprocessorOpResolver& op_resolver)
 
 TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 {
+	MicroPrintf("MicroSpeech model size = %u bytes", tflite_model_size);
+
 	// Map the model into a usable data structure. This doesn't involve any
 	// copying or parsing, it's a very lightweight operation.
-	const tflite::Model* model = tflite::GetModel(g_micro_speech_quantized_model_data);
+	const tflite::Model* model = tflite::GetModel(tflite_model_data);
 	ESP_ERROR_CHECK(model->version() != TFLITE_SCHEMA_VERSION);
 
 	MicroSpeechOpResolver op_resolver;
@@ -163,7 +165,7 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 
 	// check output shape is compatible with our number of prediction categories
 	MicroPrintf("MicroSpeech model output = %u", output->dims->data[output->dims->size - 1]);
-	ESP_ERROR_CHECK(kCategoryCount != output->dims->data[output->dims->size - 1]);
+	ESP_ERROR_CHECK(tflite_category_count != output->dims->data[output->dims->size - 1]);
 
 	float output_scale = output->params.scale;
 	int output_zero_point = output->params.zero_point;
@@ -172,16 +174,16 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 	ESP_ERROR_CHECK(interpreter.Invoke() != kTfLiteOk);
 
 	// Dequantize output values
-	float category_predictions[kCategoryCount];
+	float category_predictions[tflite_category_count];
 	MicroPrintf("MicroSpeech category predictions:");
-	for (int i = 0; i < kCategoryCount; i++) {
+	for (int i = 0; i < tflite_category_count; i++) {
 		category_predictions[i] = (tflite::GetTensorData<int8_t>(output)[i] - output_zero_point) * output_scale;
-		MicroPrintf("  %.4f %s", static_cast<double>(category_predictions[i]), kCategoryLabels[i]);
+		MicroPrintf("  %.4f %s", static_cast<double>(category_predictions[i]), tflite_category_labels[i]);
 	}
 	int prediction_index = std::distance(std::begin(category_predictions),
 			       std::max_element(std::begin(category_predictions),
 			       std::end(category_predictions)));
-	MicroPrintf("RESULT: %s", kCategoryLabels[prediction_index]);
+	MicroPrintf("RESULT: %s", tflite_category_labels[prediction_index]);
 
 	if (category_predictions[prediction_index] > RECOGNITION_THRESHOLD) {
 		struct event_bus_msg msg = {
