@@ -255,6 +255,12 @@ TfLiteStatus GenerateFeatures(const int16_t* audio_data, const size_t audio_data
 		audio_data += kAudioSampleStrideCount;
 		remaining_samples -= kAudioSampleStrideCount;
 	}
+	// Fill in the gaps with 0
+	while (feature_index < kFeatureCount) {
+		memset((*features_output)[feature_index], 0,
+		       sizeof((*features_output)[feature_index]));
+		feature_index++;
+	}
 
 	return kTfLiteOk;
 }
