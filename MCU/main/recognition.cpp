@@ -54,11 +54,13 @@ static const char *TAG = "RECOGNITION";
 constexpr size_t kArenaSize = 28584;  // xtensa p6
 alignas(16) uint8_t g_arena[kArenaSize];
 
-using Features = int8_t[kFeatureCount][kFeatureSize];
+using Features = int8_t[tflite_feature_count][tflite_feature_size];
 Features g_features;
 
-constexpr int kAudioSampleDurationCount = kFeatureDurationMs * tflite_model_audio_sample_frequency / 1000;
-constexpr int kAudioSampleStrideCount = kFeatureStrideMs * tflite_model_audio_sample_frequency / 1000;
+constexpr int kAudioSampleDurationCount =
+	tflite_feature_duration_ms * tflite_model_audio_sample_frequency / 1000;
+constexpr int kAudioSampleStrideCount =
+	tflite_feature_stride_ms * tflite_model_audio_sample_frequency / 1000;
 
 using MicroSpeechOpResolver = tflite::MicroMutableOpResolver<4>;
 using AudioPreprocessorOpResolver = tflite::MicroMutableOpResolver<18>;
@@ -158,7 +160,7 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 	ESP_ERROR_CHECK(input == nullptr);
 
 	// check input shape is compatible with our feature data size
-	ESP_ERROR_CHECK(kFeatureElementCount != input->dims->data[input->dims->size - 1]);
+	ESP_ERROR_CHECK(tflite_feature_element_count != input->dims->data[input->dims->size - 1]);
 
 	TfLiteTensor* output = interpreter.output(0);
 	ESP_ERROR_CHECK(output == nullptr);
@@ -170,7 +172,7 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 	float output_scale = output->params.scale;
 	int output_zero_point = output->params.zero_point;
 
-	std::copy_n(&features[0][0], kFeatureElementCount, tflite::GetTensorData<int8_t>(input));
+	std::copy_n(&features[0][0], tflite_feature_element_count, tflite::GetTensorData<int8_t>(input));
 	ESP_ERROR_CHECK(interpreter.Invoke() != kTfLiteOk);
 
 	// Dequantize output values
@@ -217,11 +219,11 @@ TfLiteStatus GenerateSingleFeature(const int16_t* audio_data, const int audio_da
 	ESP_ERROR_CHECK(output == nullptr);
 
 	// check output shape is compatible with our feature size
-	ESP_ERROR_CHECK(kFeatureSize != output->dims->data[output->dims->size - 1]);
+	ESP_ERROR_CHECK(tflite_feature_size != output->dims->data[output->dims->size - 1]);
 
 	std::copy_n(audio_data, audio_data_size, tflite::GetTensorData<int16_t>(input));
 	ESP_ERROR_CHECK(interpreter->Invoke() != kTfLiteOk);
-	std::copy_n(tflite::GetTensorData<int8_t>(output), kFeatureSize, feature_output);
+	std::copy_n(tflite::GetTensorData<int8_t>(output), tflite_feature_size, feature_output);
 
 	return kTfLiteOk;
 }
@@ -246,7 +248,7 @@ TfLiteStatus GenerateFeatures(const int16_t* audio_data, const size_t audio_data
 	size_t remaining_samples = audio_data_size;
 	size_t feature_index = 0;
 	while (remaining_samples >= kAudioSampleDurationCount &&
-	       feature_index < kFeatureCount) {
+	       feature_index < tflite_feature_count) {
 		TF_LITE_ENSURE_STATUS(GenerateSingleFeature(audio_data,
 							    kAudioSampleDurationCount,
 							    (*features_output)[feature_index],
@@ -256,7 +258,7 @@ TfLiteStatus GenerateFeatures(const int16_t* audio_data, const size_t audio_data
 		remaining_samples -= kAudioSampleStrideCount;
 	}
 	// Fill in the gaps with 0
-	while (feature_index < kFeatureCount) {
+	while (feature_index < tflite_feature_count) {
 		memset((*features_output)[feature_index], 0,
 		       sizeof((*features_output)[feature_index]));
 		feature_index++;

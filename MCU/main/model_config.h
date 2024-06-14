@@ -28,10 +28,9 @@
 /* Test only */
 #define FUNCTION_TEST
 
-#include "micro_model_settings.h"
-
 #if defined(FUNCTION_TEST)
 
+#include "micro_model_settings.h"
 #include "models/micro_speech_quantized_model_data.h"
 
 #define tflite_model_data g_micro_speech_quantized_model_data
@@ -39,6 +38,11 @@
 #define tflite_model_audio_sample_frequency kAudioSampleFrequency
 #define tflite_category_count kCategoryCount
 #define tflite_category_labels kCategoryLabels
+#define tflite_feature_size kFeatureSize
+#define tflite_feature_count kFeatureCount
+#define tflite_feature_element_count kFeatureElementCount
+#define tflite_feature_stride_ms kFeatureStrideMs
+#define tflite_feature_duration_ms kFeatureDurationMs
 
 #else
 
