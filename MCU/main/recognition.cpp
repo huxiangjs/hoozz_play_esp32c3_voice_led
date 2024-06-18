@@ -61,6 +61,7 @@ constexpr int kAudioSampleDurationCount =
 	tflite_feature_duration_ms * tflite_model_audio_sample_frequency / 1000;
 constexpr int kAudioSampleStrideCount =
 	tflite_feature_stride_ms * tflite_model_audio_sample_frequency / 1000;
+constexpr int16_t silence_audio_data[kAudioSampleDurationCount] = {0};
 
 using MicroSpeechOpResolver = tflite::MicroMutableOpResolver<4>;
 using AudioPreprocessorOpResolver = tflite::MicroMutableOpResolver<18>;
@@ -257,10 +258,12 @@ TfLiteStatus GenerateFeatures(const int16_t* audio_data, const size_t audio_data
 		audio_data += kAudioSampleStrideCount;
 		remaining_samples -= kAudioSampleStrideCount;
 	}
-	// Fill in the gaps with 0
+	// Filling silence features (We have to do this to satisfy the input of the micro-speech model)
 	while (feature_index < tflite_feature_count) {
-		memset((*features_output)[feature_index], 0,
-		       sizeof((*features_output)[feature_index]));
+		TF_LITE_ENSURE_STATUS(GenerateSingleFeature(silence_audio_data,
+							    kAudioSampleDurationCount,
+							    (*features_output)[feature_index],
+							    &interpreter));
 		feature_index++;
 	}
 
