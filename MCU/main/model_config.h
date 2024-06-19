@@ -26,15 +26,15 @@
 #define __MODEL_CONFIG_H_
 
 /* Test only */
-#define FUNCTION_TEST
+// #define FUNCTION_TEST
 
 #if defined(FUNCTION_TEST)
 
 #include "micro_model_settings.h"
 #include "models/micro_speech_quantized_model_data.h"
 
-#define tflite_model_data g_micro_speech_quantized_model_data
-#define tflite_model_size g_micro_speech_quantized_model_data_size
+#define tflite_speech_model_data g_micro_speech_quantized_model_data
+#define tflite_speech_model_size g_micro_speech_quantized_model_data_size
 #define tflite_model_audio_sample_frequency kAudioSampleFrequency
 #define tflite_category_count kCategoryCount
 #define tflite_category_labels kCategoryLabels
@@ -51,7 +51,15 @@
 
 #else
 
-#include "models/model.cc"
+#include "speech_models/model.cc"
+
+#if (TFLITE_FEATURE_SIZE) == 60
+#include "feature_models/audio_preprocessor_int8_x60.cc"
+#elif (TFLITE_FEATURE_SIZE) == 50
+#include "feature_models/audio_preprocessor_int8_x50.cc"
+#else
+#include "feature_models/audio_preprocessor_int8_x40.cc"
+#endif
 
 #endif /* FUNCTION_TEST */
 

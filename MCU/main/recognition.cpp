@@ -140,11 +140,11 @@ TfLiteStatus RegisterOps(AudioPreprocessorOpResolver& op_resolver)
 
 TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 {
-	MicroPrintf("MicroSpeech model size = %u bytes", tflite_model_size);
+	MicroPrintf("MicroSpeech model size = %u bytes", tflite_speech_model_size);
 
 	// Map the model into a usable data structure. This doesn't involve any
 	// copying or parsing, it's a very lightweight operation.
-	const tflite::Model* model = tflite::GetModel(tflite_model_data);
+	const tflite::Model* model = tflite::GetModel(tflite_speech_model_data);
 	ESP_ERROR_CHECK(model->version() != TFLITE_SCHEMA_VERSION);
 
 	MicroSpeechOpResolver op_resolver;
