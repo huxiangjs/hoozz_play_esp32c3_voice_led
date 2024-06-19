@@ -39,7 +39,6 @@
 #include <cstdint>
 #include <iterator>
 #include "tensorflow/lite/core/c/common.h"
-#include "models/audio_preprocessor_int8_model_data.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_log.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
@@ -234,7 +233,7 @@ TfLiteStatus GenerateFeatures(const int16_t* audio_data, const size_t audio_data
 {
 	// Map the model into a usable data structure. This doesn't involve any
 	// copying or parsing, it's a very lightweight operation.
-	const tflite::Model* model = tflite::GetModel(g_audio_preprocessor_int8_model_data);
+	const tflite::Model* model = tflite::GetModel(tflite_feature_model_data);
 	ESP_ERROR_CHECK(model->version() != TFLITE_SCHEMA_VERSION);
 
 	AudioPreprocessorOpResolver op_resolver;

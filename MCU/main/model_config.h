@@ -44,6 +44,11 @@
 #define tflite_feature_stride_ms kFeatureStrideMs
 #define tflite_feature_duration_ms kFeatureDurationMs
 
+#include "models/audio_preprocessor_int8_model_data.h"
+
+#define tflite_feature_model_data g_audio_preprocessor_int8_model_data
+#define tflite_feature_model_size g_audio_preprocessor_int8_model_data_size
+
 #else
 
 #include "models/model.cc"
