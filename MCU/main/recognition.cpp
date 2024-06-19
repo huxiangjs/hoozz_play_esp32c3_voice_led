@@ -65,7 +65,7 @@ constexpr int16_t silence_audio_data[kAudioSampleDurationCount] = {0};
 using MicroSpeechOpResolver = tflite::MicroMutableOpResolver<4>;
 using AudioPreprocessorOpResolver = tflite::MicroMutableOpResolver<18>;
 
-#define RECOGNITION_THRESHOLD		0.75
+#define RECOGNITION_THRESHOLD		0.60
 
 // #define DEBUG_DATA_TO_SERIAL
 
