@@ -206,14 +206,10 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 			.type = EVENT_BUS_AUDIO_RECOGNITION,
 			.param1 = 0,
 		};
-		if (prediction_index == 2) {
-			msg.param1 = 1;
+		if (prediction_index >= 2) {
+			msg.param1 = prediction_index - 2;
+			ESP_LOGD(TAG, "Case %d", (int)msg.param1);
 			event_bus_send(&msg);
-			ESP_LOGI(TAG, "Case 1");
-		} else if (prediction_index == 3) {
-			msg.param1 = 2;
-			event_bus_send(&msg);
-			ESP_LOGI(TAG, "Case 2");
 		}
 	}
 	return kTfLiteOk;

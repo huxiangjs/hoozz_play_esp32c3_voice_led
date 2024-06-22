@@ -44,7 +44,6 @@
 static const char *TAG = "APP-MAIN";
 
 static TaskHandle_t main_handle;
-static volatile bool allow_wifi_config;
 static uint32_t last_color;
 
 #define LED_CMD_SET_COLOR		0x00
@@ -52,6 +51,14 @@ static uint32_t last_color;
 
 #define LED_RESULT_OK			0x00
 #define LED_RESULT_FAIL			0x01
+
+#define CASE_BIT(X)			(1 << (X))
+#define CASE_1_TURN_ON			CASE_BIT(0)
+#define CASE_2_TURN_OFF			CASE_BIT(1)
+#define CASE_3_SWITCH			CASE_BIT(2)
+#define CASE_4_CONFIG			CASE_BIT(3)
+
+static uint32_t case_bitmap;
 
 static void app_show_info(void)
 {
@@ -101,6 +108,24 @@ static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_
 	return 0;
 }
 
+static uint32_t app_get_color(void)
+{
+	static const uint32_t colors[] = {
+		0xff4e00, 0xff1123, 0xec05ff,
+		0x00d3ff, 0x00ff2e, 0xff3588,
+		0xb981ff, 0x67ffa3, 0xffffff,
+	};
+	static uint8_t index;
+	uint32_t color;
+
+	color = colors[index];
+	ESP_LOGD(TAG, "[%d]: %06X", (int)index, (int)color);
+	index++;
+	index %= sizeof(colors) / sizeof(colors[0]);
+
+	return color;
+}
+
 static void app_led_notify(uint32_t color)
 {
 	char rgb[3];
@@ -122,23 +147,33 @@ static bool app_event_notify_callback(struct event_bus_msg *msg)
 	case EVENT_BUS_START_SMART_CONFIG:
 		break;
 	case EVENT_BUS_STOP_SMART_CONFIG:
+		case_bitmap = CASE_1_TURN_ON;
 		break;
 	case EVENT_BUS_AUDIO_RECOGNITION:
-		if (allow_wifi_config) {
-			ESP_LOGI(TAG, "Allow wifi config");
-			if (msg->param1 == 1) {
-				allow_wifi_config = false;
-				xTaskNotifyGive(main_handle);
-			}
-		} else {
-			if (msg->param1 == 1) {
-				led_effects_play(LED_EFFECTS_ALL_ON, 0);
-				ESP_LOGI(TAG, "LED ON");
-			} else {
-				led_effects_play(LED_EFFECTS_ALL_OFF, 0);
-				ESP_LOGI(TAG, "LED OFF");
-			}
+		/* Turn on */
+		if ((case_bitmap & CASE_1_TURN_ON) && (msg->param1 == 0)) {
+			case_bitmap = CASE_2_TURN_OFF | CASE_3_SWITCH;
+			led_effects_play(LED_EFFECTS_ALL_ON, 0);
+			ESP_LOGI(TAG, "Turn on");
 		}
+		/* Turn off */
+		if ((case_bitmap & CASE_2_TURN_OFF) && (msg->param1 == 1)) {
+			case_bitmap = CASE_1_TURN_ON;
+			led_effects_play(LED_EFFECTS_ALL_OFF, 0);
+			ESP_LOGI(TAG, "Turn off");
+		}
+		/* Switch color */
+		if ((case_bitmap & CASE_3_SWITCH) && (msg->param1 == 2)) {
+			led_effects_play(LED_EFFECTS_COLOR_FILL, app_get_color());
+			ESP_LOGI(TAG, "Switch color");
+		}
+		/* Smart config */
+		if ((case_bitmap & CASE_4_CONFIG) && (msg->param1 == 3)) {
+			ESP_LOGI(TAG, "Smart config");
+			case_bitmap = 0;
+			xTaskNotifyGive(main_handle);
+		}
+
 		break;
 	case EVENT_BUS_LED_COLOR_UPDATED:
 		ESP_LOGD(TAG, "Color updated");
@@ -179,10 +214,10 @@ extern "C" void app_main(void)
 	simple_ctrl_set_class_id(CLASS_ID_VOICE_LED);
 	simple_ctrl_request_register(app_led_request);
 
-	allow_wifi_config = true;
+	case_bitmap = CASE_4_CONFIG;
 	ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(8000));
-	if (allow_wifi_config == true) {
-		allow_wifi_config = false;
+	if (case_bitmap & CASE_4_CONFIG) {
+		case_bitmap = CASE_1_TURN_ON;
 		wifi_connect();
 	} else {
 		wifi_smartconfig();
