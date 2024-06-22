@@ -50,8 +50,10 @@ static const char *TAG = "RECOGNITION";
 // Arena size is a guesstimate, followed by use of
 // MicroInterpreter::arena_used_bytes() on both the AudioPreprocessor and
 // MicroSpeech models and using the larger of the two results.
-constexpr size_t kArenaSize = 28584;  // xtensa p6
-alignas(16) uint8_t g_arena[kArenaSize];
+constexpr size_t kSpeechArenaSize = 28584;   // xtensa p6
+alignas(16) uint8_t g_speech_arena[kSpeechArenaSize];
+constexpr size_t kFeatureArenaSize = 10240;  // xtensa p6
+alignas(16) uint8_t g_feature_arena[kFeatureArenaSize];
 
 using Features = int8_t[tflite_feature_count][tflite_feature_size];
 Features g_features;
@@ -60,10 +62,22 @@ constexpr int kAudioSampleDurationCount =
 	tflite_feature_duration_ms * tflite_model_audio_sample_frequency / 1000;
 constexpr int kAudioSampleStrideCount =
 	tflite_feature_stride_ms * tflite_model_audio_sample_frequency / 1000;
+constexpr int kAudioSampleOverlapCount = kAudioSampleDurationCount - kAudioSampleStrideCount;
 constexpr int16_t silence_audio_data[kAudioSampleDurationCount] = {0};
 
 using MicroSpeechOpResolver = tflite::MicroMutableOpResolver<4>;
 using AudioPreprocessorOpResolver = tflite::MicroMutableOpResolver<18>;
+
+struct sample_event {
+	uint8_t event;
+	int16_t data[kAudioSampleDurationCount];
+};
+static struct sample_event sample_tmp;
+
+#define AUDIO_EVENT_NUM_MAX		10
+
+static QueueHandle_t event_queue;
+static SemaphoreHandle_t semaphore;
 
 #define RECOGNITION_THRESHOLD		0.60
 
@@ -140,7 +154,7 @@ TfLiteStatus RegisterOps(AudioPreprocessorOpResolver& op_resolver)
 
 TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 {
-	MicroPrintf("MicroSpeech model size = %u bytes", tflite_speech_model_size);
+	ESP_LOGI(TAG, "MicroSpeech model size = %u bytes", tflite_speech_model_size);
 
 	// Map the model into a usable data structure. This doesn't involve any
 	// copying or parsing, it's a very lightweight operation.
@@ -150,11 +164,11 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 	MicroSpeechOpResolver op_resolver;
 	ESP_ERROR_CHECK(RegisterOps(op_resolver) != kTfLiteOk);
 
-	tflite::MicroInterpreter interpreter(model, op_resolver, g_arena, kArenaSize);
+	tflite::MicroInterpreter interpreter(model, op_resolver, g_speech_arena, kSpeechArenaSize);
 
 	ESP_ERROR_CHECK(interpreter.AllocateTensors() != kTfLiteOk);
 
-	MicroPrintf("MicroSpeech model arena size = %u", interpreter.arena_used_bytes());
+	ESP_LOGI(TAG, "MicroSpeech model arena size = %u", interpreter.arena_used_bytes());
 
 	TfLiteTensor* input = interpreter.input(0);
 	ESP_ERROR_CHECK(input == nullptr);
@@ -166,7 +180,7 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 	ESP_ERROR_CHECK(output == nullptr);
 
 	// check output shape is compatible with our number of prediction categories
-	MicroPrintf("MicroSpeech model output = %u", output->dims->data[output->dims->size - 1]);
+	ESP_LOGI(TAG, "MicroSpeech model output = %u", output->dims->data[output->dims->size - 1]);
 	ESP_ERROR_CHECK(tflite_category_count != output->dims->data[output->dims->size - 1]);
 
 	float output_scale = output->params.scale;
@@ -185,7 +199,7 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 	int prediction_index = std::distance(std::begin(category_predictions),
 			       std::max_element(std::begin(category_predictions),
 			       std::end(category_predictions)));
-	MicroPrintf("RESULT: %s", tflite_category_labels[prediction_index]);
+	MicroPrintf("Highest score: [%s]", tflite_category_labels[prediction_index]);
 
 	if (category_predictions[prediction_index] > RECOGNITION_THRESHOLD) {
 		struct event_bus_msg msg = {
@@ -195,11 +209,11 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 		if (prediction_index == 2) {
 			msg.param1 = 1;
 			event_bus_send(&msg);
-			MicroPrintf("Case 1");
+			ESP_LOGI(TAG, "Case 1");
 		} else if (prediction_index == 3) {
 			msg.param1 = 2;
 			event_bus_send(&msg);
-			MicroPrintf("Case 2");
+			ESP_LOGI(TAG, "Case 2");
 		}
 	}
 	return kTfLiteOk;
@@ -228,8 +242,7 @@ TfLiteStatus GenerateSingleFeature(const int16_t* audio_data, const int audio_da
 	return kTfLiteOk;
 }
 
-TfLiteStatus GenerateFeatures(const int16_t* audio_data, const size_t audio_data_size,
-			      Features* features_output)
+static void recognition_task(void *args)
 {
 	// Map the model into a usable data structure. This doesn't involve any
 	// copying or parsing, it's a very lightweight operation.
@@ -239,80 +252,131 @@ TfLiteStatus GenerateFeatures(const int16_t* audio_data, const size_t audio_data
 	AudioPreprocessorOpResolver op_resolver;
 	ESP_ERROR_CHECK(RegisterOps(op_resolver) != kTfLiteOk);
 
-	tflite::MicroInterpreter interpreter(model, op_resolver, g_arena, kArenaSize);
+	tflite::MicroInterpreter interpreter(model, op_resolver, g_feature_arena, kFeatureArenaSize);
 
 	ESP_ERROR_CHECK(interpreter.AllocateTensors() != kTfLiteOk);
 
-	MicroPrintf("AudioPreprocessor model arena size = %u", interpreter.arena_used_bytes());
+	ESP_LOGI(TAG, "AudioPreprocessor model arena size = %u", interpreter.arena_used_bytes());
 
-	size_t remaining_samples = audio_data_size;
+	struct sample_event event = {0, 0};
 	size_t feature_index = 0;
-	while (remaining_samples >= kAudioSampleDurationCount &&
-	       feature_index < tflite_feature_count) {
-		TF_LITE_ENSURE_STATUS(GenerateSingleFeature(audio_data,
-							    kAudioSampleDurationCount,
-							    (*features_output)[feature_index],
-							    &interpreter));
-		feature_index++;
-		audio_data += kAudioSampleStrideCount;
-		remaining_samples -= kAudioSampleStrideCount;
-	}
-	// Filling silence features (We have to do this to satisfy the input of the micro-speech model)
-	while (feature_index < tflite_feature_count) {
-		TF_LITE_ENSURE_STATUS(GenerateSingleFeature(silence_audio_data,
-							    kAudioSampleDurationCount,
-							    (*features_output)[feature_index],
-							    &interpreter));
-		feature_index++;
+
+	while (1) {
+		/* Receive frame events */
+		if(xQueueReceive(event_queue, &event, portMAX_DELAY)) {
+			/* Start */
+			if (event.event & AUDIO_EVENT_VOICE_START) {
+				ESP_LOGD(TAG, "RECOGNITION START");
+				feature_index = 0;
+			}
+
+			/* Generate features */
+			if ((feature_index < tflite_feature_count) &&
+			    (event.event & AUDIO_EVENT_VOICE_FRAME)) {
+				ESP_LOGD(TAG, "RECOGNITION FRAME");
+				GenerateSingleFeature(event.data,
+						      kAudioSampleDurationCount,
+						      g_features[feature_index],
+						      &interpreter);
+				feature_index++;
+			}
+
+			/* Stop */
+			if ((event.event & AUDIO_EVENT_VOICE_STOP) &&
+			    !(event.event & AUDIO_EVENT_VOICE_DROP) &&
+			    !(event.event & AUDIO_EVENT_VOICE_OVER)) {
+				ESP_LOGI(TAG, "Voice length: %dms",
+					 feature_index * tflite_feature_stride_ms);
+
+				/*
+				 * Filling silence features
+				 * (We have to do this to satisfy the input of the micro-speech model)
+				 */
+				while (feature_index < tflite_feature_count) {
+					GenerateSingleFeature(silence_audio_data,
+							      kAudioSampleDurationCount,
+							      g_features[feature_index],
+							      &interpreter);
+					feature_index++;
+				}
+
+				/* Single recognition */
+				unsigned int start_time;
+				unsigned int end_time;
+				start_time = esp_log_timestamp();
+				LoadMicroSpeechModelAndPerformInference(g_features);
+				end_time = esp_log_timestamp();
+				ESP_LOGI(TAG, "Time cost:  +%ums", end_time - start_time);
+				ESP_LOGI(TAG, "Free heap size: %dbytes", (int)esp_get_free_heap_size());
+			}
+
+			/* Give the end signal */
+			if (event.event & AUDIO_EVENT_VOICE_STOP)
+				xSemaphoreGive(semaphore);
+		}
 	}
 
-	return kTfLiteOk;
+	vQueueDelete(event_queue);
+	vTaskDelete(NULL);
 }
 
-TfLiteStatus AudioRecognition(const int16_t* audio_data, const size_t audio_data_size)
-{
-	unsigned int start_time;
-	unsigned int end_time;
-
-	start_time = esp_log_timestamp();
-	TF_LITE_ENSURE_STATUS(GenerateFeatures(audio_data, audio_data_size, &g_features));
-	end_time = esp_log_timestamp();
-	ESP_LOGI(TAG, "%s:%d:  +%ums", __func__, __LINE__, end_time - start_time);
-
-	start_time = esp_log_timestamp();
-	TF_LITE_ENSURE_STATUS(LoadMicroSpeechModelAndPerformInference(g_features));
-	end_time = esp_log_timestamp();
-	ESP_LOGI(TAG, "%s:%d:  +%ums", __func__, __LINE__, end_time - start_time);
-
-	return kTfLiteOk;
-}
-
-static void audio_event_callback(uint8_t event, void *data, uint32_t size)
+static void audio_event_callback(uint8_t event, void *data, uint16_t size)
 {
 #if defined(DEBUG_DATA_TO_SERIAL)
 	uint8_t *p = (uint8_t *)data;
-	uint32_t count = 0;
+	uint16_t count = 0;
 	size_t write_size;
-#endif
 
-	if (event == AUDIO_EVENT_VOICE_STOP) {
-		ESP_LOGI(TAG, "Output: %ums", audio_size_to_time(size));
-
-#if defined(DEBUG_DATA_TO_SERIAL)
-		/* Write to USB Serial */
-		while (count < size) {
-			write_size = size - count < 1024 ? size - count : 1024;
-			usb_uart_write_bytes(p + count, write_size);
-			count += write_size;
-		}
-#endif
-		AudioRecognition((int16_t *)data, size / sizeof(int16_t));
+	/* Write to USB Serial */
+	while (count < size) {
+		write_size = size - count < 1024 ? size - count : 1024;
+		usb_uart_write_bytes(p + count, write_size);
+		count += write_size;
 	}
+#endif
+
+	/* Check frame size */
+	ESP_ERROR_CHECK(size != kAudioSampleStrideCount * 2);
+
+	/* Copy overlap part */
+	for (uint16_t index = 0; index < kAudioSampleOverlapCount; index++)
+		sample_tmp.data[index] = sample_tmp.data[kAudioSampleStrideCount + index];
+
+	/* Copy new data */
+	int16_t *frame = (int16_t *)data;
+	for (uint16_t index = 0; index < kAudioSampleStrideCount; index++)
+		sample_tmp.data[kAudioSampleOverlapCount + index] = frame[index];
+
+	/* Send event */
+	sample_tmp.event = event;
+	if (xQueueSend(event_queue, (void *)&sample_tmp, (TickType_t)0) != pdTRUE)
+		ESP_LOGE(TAG, "Send sample event failed");
+
+	/* Waiting for recognition to end */
+	if (event & AUDIO_EVENT_VOICE_STOP)
+		xSemaphoreTake(semaphore, portMAX_DELAY);
 }
 
 void recognition_init(void)
 {
-	struct audio_handler handler = {audio_event_callback};
+	int ret;
+	struct audio_handler handler = {
+		.frame_time = (uint16_t)tflite_feature_stride_ms,
+		.max_time = (uint16_t)((tflite_feature_count + 1) * tflite_feature_stride_ms),
+		.event = audio_event_callback,
+	};
+
+	semaphore = xSemaphoreCreateBinary();
+	ESP_ERROR_CHECK(semaphore == NULL);
+
+	/* Create event queue */
+	event_queue = xQueueCreate(AUDIO_EVENT_NUM_MAX, sizeof(struct sample_event));
+	ESP_ERROR_CHECK(event_queue == NULL);
+
+	/* Create recognition task */
+	ret = xTaskCreate(recognition_task, "recognition_task", 4096 * 2, NULL,
+			  tskIDLE_PRIORITY + 1, NULL);
+	ESP_ERROR_CHECK(ret != pdPASS);
 
 #if defined(DEBUG_DATA_TO_SERIAL)
 	usb_uart_config();

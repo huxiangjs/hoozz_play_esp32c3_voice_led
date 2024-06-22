@@ -57,7 +57,7 @@ static void app_show_info(void)
 {
 	int size = esp_get_free_heap_size();
 
-	ESP_LOGI(TAG, "Free heap size: %dbyte", size);
+	ESP_LOGI(TAG, "Free heap size: %dbytes", size);
 }
 
 static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_size)
@@ -187,4 +187,6 @@ extern "C" void app_main(void)
 	} else {
 		wifi_smartconfig();
 	}
+
+	app_show_info();
 }

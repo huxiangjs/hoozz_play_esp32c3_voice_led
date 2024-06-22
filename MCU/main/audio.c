@@ -45,18 +45,10 @@
 #define ES7243E_ADDR			0x10		// AD0 AD1 AD2 is low
 
 #define AUDIO_SAMPLE_DEPTH		(16 / 8)	// 16-bit: 2-byte
-
 #define AUDIO_SAMPLE_RATE		16000		// 16kHz
-#define AUDIO_FRAME_TIME		20		// 20ms
-#define AUDIO_SAMPLE_POINT		(AUDIO_SAMPLE_RATE * AUDIO_FRAME_TIME / 1000)
-#define AUDIO_FRAME_SIZE		(AUDIO_SAMPLE_POINT * AUDIO_SAMPLE_DEPTH)
 
-#define AUDIO_HISTORY_TIME		2000		// 2000ms
-#define AUDIO_HISTORY_POINT		(AUDIO_SAMPLE_RATE * AUDIO_HISTORY_TIME / 1000)
-#define AUDIO_HISTORY_SIZE		(AUDIO_HISTORY_POINT * AUDIO_SAMPLE_DEPTH)
-
-#define AUDIO_MIN_TIME			500		// 500ms
-#define AUDIO_FILTER_TIME		200		// 200ms
+#define AUDIO_MIN_TIME			300		// 400ms
+#define AUDIO_FILTER_TIME		100		// 100ms
 
 static const char *TAG = "AUDIO";
 
@@ -64,10 +56,16 @@ static i2s_chan_handle_t rx_chan;
 static TaskHandle_t audio_task_handle;
 static TaskHandle_t i2s_task_handle;
 static uint8_t audio_event;
-static uint8_t audio_history[AUDIO_HISTORY_SIZE];
-static uint32_t audio_vaild_size;
 static uint8_t audio_vad_state;
 static struct audio_handler audio_hand;
+
+static uint16_t audio_frame_time;
+static uint16_t audio_sample_point;
+static uint16_t audio_frame_size;
+static uint8_t *audio_frame_buf;
+
+static uint16_t audio_max_time;
+static uint16_t audio_time_count;
 
 static void audio_i2c_init(void)
 {
@@ -87,12 +85,14 @@ static void audio_i2c_init(void)
 static void audio_i2c_scan(void)
 {
 	uint8_t address;
+	char buffer[512];
+	uint16_t index = 0;
 
-	printf("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f\r\n");
+	index += snprintf(buffer + index, sizeof(buffer) - index,
+			  "\r\n     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f\r\n");
 	for (int i = 0; i < 128; i += 16) {
-		printf("%02x: ", i);
+		index += snprintf(buffer + index, sizeof(buffer) - index,"%02x: ", i);
 		for (int j = 0; j < 16; j++) {
-			fflush(stdout);
 			address = i + j;
 			i2c_cmd_handle_t cmd = i2c_cmd_link_create();
 			i2c_master_start(cmd);
@@ -101,15 +101,17 @@ static void audio_i2c_scan(void)
 			esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 50 / portTICK_PERIOD_MS);
 			i2c_cmd_link_delete(cmd);
 			if (ret == ESP_OK) {
-				printf("%02x ", address);
+				index += snprintf(buffer + index, sizeof(buffer) - index, "%02x ", address);
 			} else if (ret == ESP_ERR_TIMEOUT) {
-				printf("UU ");
+				index += snprintf(buffer + index, sizeof(buffer) - index, "UU ");
 			} else {
-				printf("-- ");
+				index += snprintf(buffer + index, sizeof(buffer) - index, "-- ");
 			}
 		}
-		printf("\r\n");
+		index += snprintf(buffer + index, sizeof(buffer) - index, "\r\n");
 	}
+
+	ESP_LOGI(TAG, "%s", buffer);
 }
 
 static void audio_i2s_init(void)
@@ -143,15 +145,35 @@ static void audio_i2s_init(void)
 	ESP_ERROR_CHECK(i2s_channel_init_tdm_mode(rx_chan, &rx_tdm_cfg));
 }
 
-static void audio_process_task(void *args)
+static void audio_callback_task(void *args)
 {
 	struct audio_handler *handler = (struct audio_handler *)args;
 
 	while (1) {
 		/* Wait */
 		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+#if 0
+		/*
+		 * Show voice status
+		 * (ESP32 needs to be followed by \r\n before outputting to the serial port)
+		 */
+		if (audio_event & AUDIO_EVENT_VOICE_START)
+			printf("[");
+		if (audio_event & AUDIO_EVENT_VOICE_FRAME)
+			printf("=");
+		if (audio_event & AUDIO_EVENT_VOICE_STOP)
+			printf("]");
+		if (audio_event & AUDIO_EVENT_VOICE_OVER)
+			printf(" OVER");
+		if (audio_event & AUDIO_EVENT_VOICE_DROP)
+			printf(" DROP");
+		if (audio_event & AUDIO_EVENT_VOICE_STOP)
+			printf(" %dms\r\n", audio_time_count);
+#endif
+
 		/* Process */
-		handler->event(audio_event, audio_history, audio_vaild_size);
+		handler->event(audio_event, audio_frame_buf, audio_frame_size);
 		/* Done */
 		xTaskNotifyGive(i2s_task_handle);
 	}
@@ -161,10 +183,7 @@ static void audio_process_task(void *args)
 
 static void audio_i2s_read_task(void *args)
 {
-	uint8_t *r_buf = (uint8_t *)calloc(1, AUDIO_FRAME_SIZE);
-	assert(r_buf);
 	size_t r_bytes = 0;
-	size_t copy_size;
 	uint16_t keep_count = 0;
 	bool busy = false;
 	int ret;
@@ -179,10 +198,16 @@ static void audio_i2s_read_task(void *args)
 
 	while (1) {
 		/* Read i2s data */
-		if (i2s_channel_read(rx_chan, r_buf, AUDIO_FRAME_SIZE, &r_bytes, 1000/*ms*/) == ESP_OK) {
+		if (i2s_channel_read(rx_chan, audio_frame_buf, audio_frame_size, &r_bytes, 1000/*ms*/) == ESP_OK) {
 #if 0
-			ESP_LOGI(TAG, "Read Task: i2s read %d bytes, first data: %d", r_bytes, *((short int *)r_buf));
+			ESP_LOGI(TAG, "Read Task: i2s read %d bytes, first data: %d", r_bytes, *((short int *)audio_frame_size));
 #endif
+			if (audio_frame_size != r_bytes) {
+				ESP_LOGE(TAG, "%d bytes of data were expected, but only %d bytes were received",
+					 audio_frame_size, r_bytes);
+				continue;
+			}
+
 			/* We discard all data received while there is audio being processed */
 			if (busy) {
 				if (ulTaskNotifyTake(pdTRUE, 0) == pdTRUE)
@@ -192,7 +217,7 @@ static void audio_i2s_read_task(void *args)
 			}
 
 			/* Do VAD */
-			ret = fvad_process(vad, (int16_t *)r_buf, AUDIO_SAMPLE_POINT);
+			ret = fvad_process(vad, (int16_t *)audio_frame_buf, audio_sample_point);
 			if (ret < 0) {
 				ESP_LOGE(TAG, "VAD processing failed");
 				continue;
@@ -206,7 +231,7 @@ static void audio_i2s_read_task(void *args)
 			 * If the last speech was too long, wait until the speech
 			 * is inactive before starting again.
 			 */
-			if (audio_event & AUDIO_EVENT_VOICE_FULL) {
+			if (audio_event & AUDIO_EVENT_VOICE_OVER) {
 				if (ret)
 					continue;
 				else
@@ -216,45 +241,35 @@ static void audio_i2s_read_task(void *args)
 			/* Changed */
 			if (audio_vad_state ^ ret) {
 				if (ret) {
-					audio_vaild_size = 0;
+					audio_time_count = audio_frame_time;
 					audio_vad_state = ret;
-					audio_event = AUDIO_EVENT_VOICE_START;
+					audio_event = AUDIO_EVENT_VOICE_START | AUDIO_EVENT_VOICE_FRAME;
 					busy = true;
 					xTaskNotifyGive(audio_task_handle);
 				} else if (keep_count >= AUDIO_FILTER_TIME) {
+					audio_time_count += audio_frame_time;
 					audio_vad_state = ret;
-					audio_event = AUDIO_EVENT_VOICE_STOP;
-					if (audio_vaild_size < AUDIO_SAMPLE_RATE * 2 * AUDIO_MIN_TIME / 1000)
+					audio_event = AUDIO_EVENT_VOICE_FRAME | AUDIO_EVENT_VOICE_STOP;
+					if (audio_time_count < AUDIO_MIN_TIME)
 						audio_event |= AUDIO_EVENT_VOICE_DROP;
+					busy = true;
+					xTaskNotifyGive(audio_task_handle);
+				}
+			} else {
+				/* Single frame */
+				if (audio_vad_state) {
+					audio_time_count += audio_frame_time;
+					audio_event = AUDIO_EVENT_VOICE_FRAME;
+					if (audio_time_count >= audio_max_time) {
+						audio_event |= AUDIO_EVENT_VOICE_STOP | AUDIO_EVENT_VOICE_OVER;
+						audio_vad_state = 0;
+					}
 					busy = true;
 					xTaskNotifyGive(audio_task_handle);
 				}
 			}
 
-			/* Save frame */
-			if (audio_vad_state) {
-				copy_size = sizeof(audio_history) - (size_t)audio_vaild_size;
-
-				if (r_bytes < copy_size) {
-					copy_size = r_bytes;
-					memcpy(audio_history + audio_vaild_size, r_buf, copy_size);
-					audio_vaild_size += (uint32_t)copy_size;
-				} else {
-#if defined(DEBUG)
-					printf("buffer full, size: %lu bytes\n", audio_vaild_size);
-#endif
-					memcpy(audio_history + audio_vaild_size, r_buf, copy_size);
-					audio_vaild_size += (uint32_t)copy_size;
-					audio_vad_state = 0;
-					audio_event = AUDIO_EVENT_VOICE_STOP | AUDIO_EVENT_VOICE_FULL;
-					if (audio_vaild_size < AUDIO_SAMPLE_RATE * 2 * AUDIO_MIN_TIME / 1000)
-						audio_event |= AUDIO_EVENT_VOICE_DROP;
-					busy = true;
-					xTaskNotifyGive(audio_task_handle);
-				}
-			}
-
-			keep_count = ret ? 0 : (keep_count + AUDIO_FRAME_TIME);
+			keep_count = ret ? 0 : (keep_count + audio_frame_time);
 
 		} else {
 			ESP_LOGE(TAG, "i2s read failed");
@@ -264,7 +279,6 @@ static void audio_i2s_read_task(void *args)
 	/* Disable the RX channel */
 	ESP_ERROR_CHECK(i2s_channel_disable(rx_chan));
 	fvad_free(vad);
-	free(r_buf);
 	vTaskDelete(NULL);
 }
 
@@ -284,13 +298,6 @@ static bool audio_i2c_write_reg(uint8_t addr, uint8_t data)
 	return true;
 }
 
-uint16_t audio_size_to_time(uint32_t size)
-{
-	uint16_t ms = (uint16_t)(size * 1000 / AUDIO_SAMPLE_RATE / AUDIO_SAMPLE_DEPTH);
-
-	return ms;
-}
-
 void audio_init(struct audio_handler *handler)
 {
 	int ret;
@@ -301,6 +308,17 @@ void audio_init(struct audio_handler *handler)
 	}
 
 	audio_hand = *handler;
+	audio_frame_time = handler->frame_time;
+	audio_max_time = handler->max_time;
+	audio_sample_point = AUDIO_SAMPLE_RATE * audio_frame_time / 1000;
+	audio_frame_size = audio_sample_point * AUDIO_SAMPLE_DEPTH;
+	audio_frame_buf = (uint8_t *)calloc(1, audio_frame_size);
+	ESP_ERROR_CHECK(audio_frame_buf == NULL);
+
+	ESP_LOGI(TAG, "audio_frame_time = %dms", audio_frame_time);
+	ESP_LOGI(TAG, "audio_max_time = %dms", audio_max_time);
+	ESP_LOGI(TAG, "audio_sample_point = %d", audio_sample_point);
+	ESP_LOGI(TAG, "audio_frame_size = %d", audio_frame_size);
 
 	/* I2C init */
 	audio_i2c_init();
@@ -315,9 +333,8 @@ void audio_init(struct audio_handler *handler)
 	audio_i2s_init();
 
 	/* Start task */
-	vTaskDelay(1000 / portTICK_PERIOD_MS);
 	if (audio_hand.event) {
-		ret = xTaskCreate(audio_process_task, "audio_process_task", 4096,
+		ret = xTaskCreate(audio_callback_task, "audio_callback_task", 2048,
 				  &audio_hand, tskIDLE_PRIORITY + 1, &audio_task_handle);
 		ESP_ERROR_CHECK(ret != pdPASS);
 	} else {

@@ -32,16 +32,18 @@ extern "C" {
 #endif /* __cplusplus */
 
 #define AUDIO_EVENT_VOICE_START		0x01
-#define AUDIO_EVENT_VOICE_STOP		0x02
-#define AUDIO_EVENT_VOICE_DROP		0x04
-#define AUDIO_EVENT_VOICE_FULL		0x08
+#define AUDIO_EVENT_VOICE_FRAME		0x02
+#define AUDIO_EVENT_VOICE_STOP		0x04
+#define AUDIO_EVENT_VOICE_DROP		0x08
+#define AUDIO_EVENT_VOICE_OVER		0x10
 
 struct audio_handler {
-	void (*event)(uint8_t event, void *data, uint32_t size);
+	uint16_t frame_time;
+	uint16_t max_time;
+	void (*event)(uint8_t event, void *data, uint16_t size);
 };
 
 void audio_init(struct audio_handler *handler);
-uint16_t audio_size_to_time(uint32_t size);
 
 #ifdef __cplusplus
 }
