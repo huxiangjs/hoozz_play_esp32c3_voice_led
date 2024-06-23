@@ -81,43 +81,6 @@ static SemaphoreHandle_t semaphore;
 
 #define RECOGNITION_THRESHOLD		0.60
 
-// #define DEBUG_DATA_TO_SERIAL
-
-#if defined(DEBUG_DATA_TO_SERIAL)
-
-#include "driver/usb_serial_jtag.h"
-#include "hal/usb_serial_jtag_ll.h"
-
-static void usb_uart_config(void)
-{
-	/* Configure USB SERIAL JTAG */
-	usb_serial_jtag_driver_config_t usb_serial_jtag_config = {
-		.tx_buffer_size = 1024,
-		.rx_buffer_size = 1024,
-	};
-
-	/*
-	 * You need:
-	 * 	menuconfig → Component config → ESP System Settings → Channel for console secondary output
-	 * then, disable log output
-	 */
-	ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
-	// usb_serial_jtag_driver_uninstall();
-}
-
-/**
- * @brief blocking call
- *
- * @param data data
- * @param size data size (unit: byte)
- */
-static inline void usb_uart_write_bytes(const void *data, uint32_t size)
-{
-	usb_serial_jtag_write_bytes(data, size, portMAX_DELAY);
-	usb_serial_jtag_ll_txfifo_flush();
-}
-#endif
-
 TfLiteStatus RegisterOps(MicroSpeechOpResolver& op_resolver)
 {
 	TF_LITE_ENSURE_STATUS(op_resolver.AddReshape());
@@ -318,19 +281,6 @@ static void recognition_task(void *args)
 
 static void audio_event_callback(uint8_t event, void *data, uint16_t size)
 {
-#if defined(DEBUG_DATA_TO_SERIAL)
-	uint8_t *p = (uint8_t *)data;
-	uint16_t count = 0;
-	size_t write_size;
-
-	/* Write to USB Serial */
-	while (count < size) {
-		write_size = size - count < 1024 ? size - count : 1024;
-		usb_uart_write_bytes(p + count, write_size);
-		count += write_size;
-	}
-#endif
-
 	/* Check frame size */
 	ESP_ERROR_CHECK(size != kAudioSampleStrideCount * 2);
 
@@ -374,8 +324,5 @@ void recognition_init(void)
 			  tskIDLE_PRIORITY + 1, NULL);
 	ESP_ERROR_CHECK(ret != pdPASS);
 
-#if defined(DEBUG_DATA_TO_SERIAL)
-	usb_uart_config();
-#endif
 	audio_init(&handler);
 }
