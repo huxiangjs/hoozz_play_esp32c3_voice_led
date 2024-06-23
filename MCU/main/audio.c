@@ -39,6 +39,7 @@
 #include <es7243e.h>
 
 #include "audio.h"
+#include "sample_send.h"
 
 // #define DEBUG
 
@@ -49,6 +50,9 @@
 
 #define AUDIO_MIN_TIME			300		// 400ms
 #define AUDIO_FILTER_TIME		100		// 100ms
+
+// Sampled and sent to TCP
+// #define SAMPLE_SEND_IP		"192.168.31.251"
 
 static const char *TAG = "AUDIO";
 
@@ -147,7 +151,9 @@ static void audio_i2s_init(void)
 
 static void audio_callback_task(void *args)
 {
+#if !defined(SAMPLE_SEND_IP)
 	struct audio_handler *handler = (struct audio_handler *)args;
+#endif
 
 	while (1) {
 		/* Wait */
@@ -172,8 +178,12 @@ static void audio_callback_task(void *args)
 			printf(" %dms\r\n", audio_time_count);
 #endif
 
+#if defined(SAMPLE_SEND_IP)
+		sample_send_event(audio_event, audio_frame_buf, audio_frame_size);
+#else
 		/* Process */
 		handler->event(audio_event, audio_frame_buf, audio_frame_size);
+#endif
 		/* Done */
 		xTaskNotifyGive(i2s_task_handle);
 	}
@@ -331,6 +341,10 @@ void audio_init(struct audio_handler *handler)
 
 	/* I2S init */
 	audio_i2s_init();
+
+#if defined(SAMPLE_SEND_IP)
+	sample_send_init(SAMPLE_SEND_IP);
+#endif
 
 	/* Start task */
 	if (audio_hand.event) {

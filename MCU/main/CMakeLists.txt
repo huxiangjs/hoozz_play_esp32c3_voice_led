@@ -12,6 +12,7 @@ idf_component_register(
 		"recognition.cpp"
 		"simple_ctrl.c"
 		"encryp.c"
+		"sample_send.c"
 
         INCLUDE_DIRS
 		"."

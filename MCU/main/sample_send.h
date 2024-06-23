@@ -22,24 +22,20 @@
  * SOFTWARE.
  */
 
-#ifndef __SIMPLE_CTRL_H_
-#define __SIMPLE_CTRL_H_
+#ifndef __SAMPLE_SEND_H_
+#define __SAMPLE_SEND_H_
 
-#include "class_id.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void simple_ctrl_init(void);
-void simple_ctrl_request_register(int (*request)(char *buffer, int buf_offs, int vaild_size, int buff_size));
-void simple_ctrl_set_encryp_type(uint8_t type);
-void simple_ctrl_notify(char *buffer, int size);
-void simple_ctrl_set_name(const char *new_name);
-void simple_ctrl_set_class_id(uint8_t new_id);
+void sample_send_event(uint8_t event, void *data, uint16_t size);
+void sample_send_init(const char *ip);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __SIMPLE_CTRL_H_ */
+#endif /* __SAMPLE_SEND_H_ */
