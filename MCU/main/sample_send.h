@@ -32,7 +32,7 @@ extern "C" {
 #endif
 
 void sample_send_event(uint8_t event, void *data, uint16_t size);
-void sample_send_init(const char *ip);
+void sample_send_init(void);
 
 #ifdef __cplusplus
 }
