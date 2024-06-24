@@ -57,10 +57,6 @@
 static const char *TAG = "AUDIO";
 
 static i2s_chan_handle_t rx_chan;
-static TaskHandle_t audio_task_handle;
-static TaskHandle_t i2s_task_handle;
-static uint8_t audio_event;
-static uint8_t audio_vad_state;
 static struct audio_handler audio_hand;
 
 static uint16_t audio_frame_time;
@@ -149,53 +145,41 @@ static void audio_i2s_init(void)
 	ESP_ERROR_CHECK(i2s_channel_init_tdm_mode(rx_chan, &rx_tdm_cfg));
 }
 
-static void audio_callback_task(void *args)
+static inline void audio_send_event(uint8_t audio_event)
 {
-#if !defined(ENABLE_SAMPLE_SEND)
-	struct audio_handler *handler = (struct audio_handler *)args;
-#endif
-
-	while (1) {
-		/* Wait */
-		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
 #if 0
-		/*
-		 * Show voice status
-		 * (ESP32 needs to be followed by \r\n before outputting to the serial port)
-		 */
-		if (audio_event & AUDIO_EVENT_VOICE_START)
-			printf("[");
-		if (audio_event & AUDIO_EVENT_VOICE_FRAME)
-			printf("=");
-		if (audio_event & AUDIO_EVENT_VOICE_STOP)
-			printf("]");
-		if (audio_event & AUDIO_EVENT_VOICE_OVER)
-			printf(" OVER");
-		if (audio_event & AUDIO_EVENT_VOICE_DROP)
-			printf(" DROP");
-		if (audio_event & AUDIO_EVENT_VOICE_STOP)
-			printf(" %dms\r\n", audio_time_count);
+	/*
+	 * Show voice status
+	 * (ESP32 needs to be followed by \r\n before outputting to the serial port)
+	 */
+	if (audio_event & AUDIO_EVENT_VOICE_START)
+		printf("[");
+	if (audio_event & AUDIO_EVENT_VOICE_FRAME)
+		printf("=");
+	if (audio_event & AUDIO_EVENT_VOICE_STOP)
+		printf("]");
+	if (audio_event & AUDIO_EVENT_VOICE_OVER)
+		printf(" OVER");
+	if (audio_event & AUDIO_EVENT_VOICE_DROP)
+		printf(" DROP");
+	if (audio_event & AUDIO_EVENT_VOICE_STOP)
+		printf(" %dms\r\n", audio_time_count);
 #endif
 
 #if defined(ENABLE_SAMPLE_SEND)
-		sample_send_event(audio_event, audio_frame_buf, audio_frame_size);
+	sample_send_event(audio_event, audio_frame_buf, audio_frame_size);
 #else
-		/* Process */
-		handler->event(audio_event, audio_frame_buf, audio_frame_size);
+	/* Process */
+	audio_hand.event(audio_event, audio_frame_buf, audio_frame_size);
 #endif
-		/* Done */
-		xTaskNotifyGive(i2s_task_handle);
-	}
-
-	vTaskDelete(NULL);
 }
 
 static void audio_i2s_read_task(void *args)
 {
 	size_t r_bytes = 0;
 	uint16_t keep_count = 0;
-	bool busy = false;
+	uint8_t audio_event = 0;
+	uint8_t audio_vad_state = 0;
 	int ret;
 
 	Fvad *vad = fvad_new();
@@ -216,14 +200,6 @@ static void audio_i2s_read_task(void *args)
 				ESP_LOGE(TAG, "%d bytes of data were expected, but only %d bytes were received",
 					 audio_frame_size, r_bytes);
 				continue;
-			}
-
-			/* We discard all data received while there is audio being processed */
-			if (busy) {
-				if (ulTaskNotifyTake(pdTRUE, 0) == pdTRUE)
-					busy = false;
-				else
-					continue;
 			}
 
 			/* Do VAD */
@@ -254,16 +230,14 @@ static void audio_i2s_read_task(void *args)
 					audio_time_count = audio_frame_time;
 					audio_vad_state = ret;
 					audio_event = AUDIO_EVENT_VOICE_START | AUDIO_EVENT_VOICE_FRAME;
-					busy = true;
-					xTaskNotifyGive(audio_task_handle);
+					audio_send_event(audio_event);
 				} else if (keep_count >= AUDIO_FILTER_TIME) {
 					audio_time_count += audio_frame_time;
 					audio_vad_state = ret;
 					audio_event = AUDIO_EVENT_VOICE_FRAME | AUDIO_EVENT_VOICE_STOP;
 					if (audio_time_count < AUDIO_MIN_TIME)
 						audio_event |= AUDIO_EVENT_VOICE_DROP;
-					busy = true;
-					xTaskNotifyGive(audio_task_handle);
+					audio_send_event(audio_event);
 				}
 			} else {
 				/* Single frame */
@@ -274,8 +248,7 @@ static void audio_i2s_read_task(void *args)
 						audio_event |= AUDIO_EVENT_VOICE_STOP | AUDIO_EVENT_VOICE_OVER;
 						audio_vad_state = 0;
 					}
-					busy = true;
-					xTaskNotifyGive(audio_task_handle);
+					audio_send_event(audio_event);
 				}
 			}
 
@@ -346,16 +319,7 @@ void audio_init(struct audio_handler *handler)
 	sample_send_init();
 #endif
 
-	/* Start task */
-	if (audio_hand.event) {
-		ret = xTaskCreate(audio_callback_task, "audio_callback_task", 2048,
-				  &audio_hand, tskIDLE_PRIORITY + 1, &audio_task_handle);
-		ESP_ERROR_CHECK(ret != pdPASS);
-	} else {
-		ESP_LOGE(TAG, "No nedd to processing");
-	}
-
 	ret = xTaskCreate(audio_i2s_read_task, "audio_i2s_read_task", 4096,
-			  NULL, tskIDLE_PRIORITY + 1, &i2s_task_handle);
+			  NULL, tskIDLE_PRIORITY + 1, NULL);
 	ESP_ERROR_CHECK(ret != pdPASS);
 }
