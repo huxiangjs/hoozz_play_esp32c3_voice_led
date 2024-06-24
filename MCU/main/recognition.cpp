@@ -79,7 +79,7 @@ static struct sample_event sample_tmp;
 static QueueHandle_t event_queue;
 static SemaphoreHandle_t semaphore;
 
-#define RECOGNITION_THRESHOLD		0.60
+#define RECOGNITION_THRESHOLD		0.00
 
 TfLiteStatus RegisterOps(MicroSpeechOpResolver& op_resolver)
 {
