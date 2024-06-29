@@ -147,6 +147,8 @@ static void app_led_notify(uint32_t color)
 	simple_ctrl_notify(rgb, sizeof(rgb));
 }
 
+static uint8_t recognition_threshold[] = {60, 50, 60, 60};
+
 static bool app_event_notify_callback(struct event_bus_msg *msg)
 {
 	switch (msg->type) {
@@ -158,30 +160,33 @@ static bool app_event_notify_callback(struct event_bus_msg *msg)
 		case_bitmap = CASE_1_TURN_ON;
 		break;
 	case EVENT_BUS_AUDIO_RECOGNITION:
-		/* Turn on */
-		if ((case_bitmap & CASE_1_TURN_ON) && (msg->param1 == 0)) {
-			case_bitmap = CASE_2_TURN_OFF | CASE_3_SWITCH;
-			led_effects_play(LED_EFFECTS_COLOR_FILL, app_get_color(false));
-			ESP_LOGI(TAG, "Turn on");
+		/* Use threshold control to reduce false recognition rate */
+		if ((msg->param1 < (sizeof(recognition_threshold) / sizeof(recognition_threshold[0]))) &&
+		    (msg->param2 >= recognition_threshold[msg->param1])) {
+			/* Turn on */
+			if ((case_bitmap & CASE_1_TURN_ON) && (msg->param1 == 0)) {
+				case_bitmap = CASE_2_TURN_OFF | CASE_3_SWITCH;
+				led_effects_play(LED_EFFECTS_COLOR_FILL, app_get_color(false));
+				ESP_LOGI(TAG, "Turn on");
+			}
+			/* Turn off */
+			if ((case_bitmap & CASE_2_TURN_OFF) && (msg->param1 == 1)) {
+				case_bitmap = CASE_1_TURN_ON;
+				led_effects_play(LED_EFFECTS_ALL_OFF, 0);
+				ESP_LOGI(TAG, "Turn off");
+			}
+			/* Switch color */
+			if ((case_bitmap & CASE_3_SWITCH) && (msg->param1 == 2)) {
+				led_effects_play(LED_EFFECTS_COLOR_FILL, app_get_color(true));
+				ESP_LOGI(TAG, "Switch color");
+			}
+			/* Smart config */
+			if ((case_bitmap & CASE_4_CONFIG) && (msg->param1 == 3)) {
+				ESP_LOGI(TAG, "Smart config");
+				case_bitmap = 0;
+				xTaskNotifyGive(main_handle);
+			}
 		}
-		/* Turn off */
-		if ((case_bitmap & CASE_2_TURN_OFF) && (msg->param1 == 1)) {
-			case_bitmap = CASE_1_TURN_ON;
-			led_effects_play(LED_EFFECTS_ALL_OFF, 0);
-			ESP_LOGI(TAG, "Turn off");
-		}
-		/* Switch color */
-		if ((case_bitmap & CASE_3_SWITCH) && (msg->param1 == 2)) {
-			led_effects_play(LED_EFFECTS_COLOR_FILL, app_get_color(true));
-			ESP_LOGI(TAG, "Switch color");
-		}
-		/* Smart config */
-		if ((case_bitmap & CASE_4_CONFIG) && (msg->param1 == 3)) {
-			ESP_LOGI(TAG, "Smart config");
-			case_bitmap = 0;
-			xTaskNotifyGive(main_handle);
-		}
-
 		break;
 	case EVENT_BUS_LED_COLOR_UPDATED:
 		ESP_LOGD(TAG, "Color updated");
@@ -194,7 +199,7 @@ static bool app_event_notify_callback(struct event_bus_msg *msg)
 
 extern "C" void app_main(void)
 {
-	struct event_bus_msg msg = { EVENT_BUS_STARTUP, 0 };
+	struct event_bus_msg msg = { EVENT_BUS_STARTUP, 0, 0};
 
 	app_show_info();
 	ESP_ERROR_CHECK(nvs_flash_init());

@@ -43,6 +43,7 @@ extern "C" {
 struct event_bus_msg {
 	uint8_t type;
 	uint32_t param1;
+	uint32_t param2;
 };
 
 typedef bool (*event_notify_callback)(struct event_bus_msg *msg);

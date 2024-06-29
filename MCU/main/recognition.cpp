@@ -79,8 +79,6 @@ static struct sample_event sample_tmp;
 static QueueHandle_t event_queue;
 static SemaphoreHandle_t semaphore;
 
-#define RECOGNITION_THRESHOLD		0.00
-
 TfLiteStatus RegisterOps(MicroSpeechOpResolver& op_resolver)
 {
 	TF_LITE_ENSURE_STATUS(op_resolver.AddReshape());
@@ -164,17 +162,18 @@ TfLiteStatus LoadMicroSpeechModelAndPerformInference(const Features& features)
 			       std::end(category_predictions)));
 	MicroPrintf("Highest score: [%s]", tflite_category_labels[prediction_index]);
 
-	if (category_predictions[prediction_index] > RECOGNITION_THRESHOLD) {
-		struct event_bus_msg msg = {
-			.type = EVENT_BUS_AUDIO_RECOGNITION,
-			.param1 = 0,
-		};
-		if (prediction_index >= 2) {
-			msg.param1 = prediction_index - 2;
-			ESP_LOGD(TAG, "Case %d", (int)msg.param1);
-			event_bus_send(&msg);
-		}
+	struct event_bus_msg msg = {
+		.type = EVENT_BUS_AUDIO_RECOGNITION,
+		.param1 = 0,
+		.param2 = 0,
+	};
+	if (prediction_index >= 2) {
+		msg.param1 = prediction_index - 2;
+		msg.param2 = category_predictions[prediction_index] * 100;
+		ESP_LOGD(TAG, "Case %d", (int)msg.param1);
+		event_bus_send(&msg);
 	}
+
 	return kTfLiteOk;
 }
 
