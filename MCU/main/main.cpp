@@ -91,6 +91,10 @@ static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_
 		ESP_LOGI(TAG, "Set color: #%06x", (unsigned int)rgb);
 		/* Set return (2byte) */
 		buffer[buf_offs + 1] = LED_RESULT_OK;
+		if (rgb)
+			case_bitmap = CASE_2_TURN_OFF | CASE_3_SWITCH;
+		else
+			case_bitmap = CASE_1_TURN_ON;
 		return 2;
 	} else if (buffer[buf_offs] == LED_CMD_GET_COLOR && vaild_size == 1) {
 		ESP_LOGI(TAG, "Get color: #%06x", (unsigned int)last_color);
@@ -108,20 +112,24 @@ static int app_led_request(char *buffer, int buf_offs, int vaild_size, int buff_
 	return 0;
 }
 
-static uint32_t app_get_color(void)
+static uint8_t pick_index;
+
+static uint32_t app_get_color(bool next)
 {
 	static const uint32_t colors[] = {
-		0xff4e00, 0xff1123, 0xec05ff,
-		0x00d3ff, 0x00ff2e, 0xff3588,
-		0xb981ff, 0x67ffa3, 0xffffff,
+		0xffffff, 0xff4e00, 0xff1123,
+		0xec05ff, 0x00d3ff, 0x00ff2e,
+		0xff3588, 0xb981ff, 0x67ffa3,
 	};
-	static uint8_t index;
+
 	uint32_t color;
 
-	color = colors[index];
-	ESP_LOGD(TAG, "[%d]: %06X", (int)index, (int)color);
-	index++;
-	index %= sizeof(colors) / sizeof(colors[0]);
+	if (next)
+		pick_index++;
+	color = colors[pick_index];
+	ESP_LOGD(TAG, "[%d]: %06X", (int)pick_index, (int)color);
+
+	pick_index %= sizeof(colors) / sizeof(colors[0]);
 
 	return color;
 }
@@ -153,7 +161,7 @@ static bool app_event_notify_callback(struct event_bus_msg *msg)
 		/* Turn on */
 		if ((case_bitmap & CASE_1_TURN_ON) && (msg->param1 == 0)) {
 			case_bitmap = CASE_2_TURN_OFF | CASE_3_SWITCH;
-			led_effects_play(LED_EFFECTS_ALL_ON, 0);
+			led_effects_play(LED_EFFECTS_COLOR_FILL, app_get_color(false));
 			ESP_LOGI(TAG, "Turn on");
 		}
 		/* Turn off */
@@ -164,7 +172,7 @@ static bool app_event_notify_callback(struct event_bus_msg *msg)
 		}
 		/* Switch color */
 		if ((case_bitmap & CASE_3_SWITCH) && (msg->param1 == 2)) {
-			led_effects_play(LED_EFFECTS_COLOR_FILL, app_get_color());
+			led_effects_play(LED_EFFECTS_COLOR_FILL, app_get_color(true));
 			ESP_LOGI(TAG, "Switch color");
 		}
 		/* Smart config */
