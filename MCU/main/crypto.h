@@ -22,8 +22,8 @@
  * SOFTWARE.
  */
 
-#ifndef __ENCRYP_H_
-#define __ENCRYP_H_
+#ifndef __CRYPTO_H_
+#define __CRYPTO_H_
 
 #include <stdint.h>
 
@@ -31,14 +31,23 @@
 extern "C" {
 #endif
 
-#define ENCRYP_TYPE_NONE		0x00
-#define ENCRYP_TYPE_MAX			0x01
+#define CRYPTO_TYPE_NONE		0x00
+#define CRYPTO_TYPE_XOR			0x01
+#define CRYPTO_TYPE_MAX			0x02
 
-int encryp_do(uint8_t encryp_type, char *buffer, int vaild_size, int buff_size);
-int decryp_do(uint8_t encryp_type, char *buffer, int vaild_size, int buff_size);
+struct crypto {
+	uint32_t count;
+	int type;
+	char *passwd;
+	int plen;
+};
+
+int crypto_en(struct crypto *handle, char *buffer, int vaild_size, int buff_size);
+int crypto_de(struct crypto *handle, char *buffer, int vaild_size, int buff_size);
+int crypto_init(struct crypto *handle, int type, char *passwd, int plen);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __ENCRYP_H_ */
+#endif /* __CRYPTO_H_ */

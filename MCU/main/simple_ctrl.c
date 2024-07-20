@@ -35,7 +35,7 @@
 #include <esp_log.h>
 #include <esp_mac.h>
 #include "event_bus.h"
-#include "encryp.h"
+#include "crypto.h"
 #include "class_id.h"
 
 static const char *TAG = "SIMPLE-CTRL";
@@ -74,9 +74,11 @@ static const char *TAG = "SIMPLE-CTRL";
 
 struct simple_ctrl_handle {
 	uint8_t data_type;
-	uint8_t encryp_type;
+	uint8_t crypto_type;
 	uint32_t data_len;
 	uint32_t ret_len;
+	struct crypto in_crypto;
+	struct crypto out_crypto;
 };
 
 static int discover_socket;
@@ -86,6 +88,10 @@ static SemaphoreHandle_t send_mutex;
 static char info_name[SIMPLE_CTRL_INFO_NAME_LENGTH + 1] = SIMPLE_CTRL_INFO_NAME_DEFAULT;
 static uint8_t info_class_id = CLASS_ID_UNKNOWN;
 static char info_id[SIMPLE_CTRL_INFO_ID_LENGTH + 1] = SIMPLE_CTRL_INFO_ID_DEFAULT;
+
+static char crypto_passwd_data[16];
+static int crypto_passwd_len;
+static uint8_t crypto_type = CRYPTO_TYPE_XOR;
 
 static void simple_ctrl_init_info_id(void)
 {
@@ -206,6 +212,8 @@ static bool simple_ctrl_notify_callback(struct event_bus_msg *msg)
 static void simple_ctrl_handle_reset(struct simple_ctrl_handle *handle)
 {
 	memset(handle, 0, sizeof(struct simple_ctrl_handle));
+	crypto_init(&handle->in_crypto, crypto_type, crypto_passwd_data, crypto_passwd_len);
+	crypto_init(&handle->out_crypto, crypto_type, crypto_passwd_data, crypto_passwd_len);
 }
 
 static int simple_ctrl_none_request(char *buffer, int buf_offs, int vaild_size, int buff_size)
@@ -220,13 +228,6 @@ static int (*request_handle)(char *buffer, int buf_offs, int vaild_size, int buf
 void simple_ctrl_request_register(int (*request)(char *buffer, int buf_offs, int vaild_size, int buff_size))
 {
 	request_handle = request;
-}
-
-static uint8_t encryp_type = ENCRYP_TYPE_NONE;
-
-void simple_ctrl_set_encryp_type(uint8_t type)
-{
-	encryp_type = type;
 }
 
 void simple_ctrl_set_class_id(uint8_t new_id)
@@ -324,12 +325,12 @@ static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 {
 	int ret;
 
-	if (handle->encryp_type != encryp_type) {
+	if (handle->crypto_type != crypto_type) {
 		ESP_LOGE(TAG, "Encryption method does not match");
 		return -1;
 	}
 
-	ret = decryp_do(handle->encryp_type, buffer, vaild_size, buff_size);
+	ret = crypto_de(&handle->in_crypto, buffer, vaild_size, buff_size);
 	if (ret < 0)
 		return ret;
 	vaild_size = ret;
@@ -373,16 +374,26 @@ void simple_ctrl_notify(char *buffer, int size)
 	int index;
 	int ret;
 	uint8_t data_info[6];
+	char header[] = CTRL_DATA_HEADER;
+	int header_size = CTRL_DATA_HEADER_SIZE;
 	int data_size;
+	struct crypto handle;
 
-	ret = encryp_do(encryp_type, buffer, size, size);
+	crypto_init(&handle, crypto_type, crypto_passwd_data, crypto_passwd_len);
+
+	ret = crypto_en(&handle, header, header_size, header_size);
+	if (ret < 0)
+		return;
+	header_size = ret;
+
+	ret = crypto_en(&handle, buffer, size, size);
 	if (ret < 0)
 		return;
 	size = ret;
-	data_size = size + CTRL_DATA_HEADER_SIZE;	// TODO: enable encryp
+	data_size = header_size + size;
 
 	data_info[0] = CTRL_DATA_TYPE_NOTIFY;
-	data_info[1] = encryp_type;
+	data_info[1] = crypto_type;
 	data_info[2] = (uint8_t)((data_size >> 0) & 0xff);
 	data_info[3] = (uint8_t)((data_size >> 8) & 0xff);
 	data_info[4] = (uint8_t)((data_size >> 16) & 0xff);
@@ -403,8 +414,8 @@ void simple_ctrl_notify(char *buffer, int size)
 			}
 
 			/* Send header */
-			ret = send(fds[index], CTRL_DATA_HEADER, CTRL_DATA_HEADER_SIZE, 0);
-			if (ret != CTRL_DATA_HEADER_SIZE) {
+			ret = send(fds[index], header, header_size, 0);
+			if (ret != header_size) {
 				ESP_LOGE(TAG, "Send data header fail: %d", ret);
 				xSemaphoreGive(send_mutex);
 				continue;
@@ -531,13 +542,13 @@ static void simple_ctrl_body_handle(void)
 
 						/* Fill parameter */
 						handle.data_type = buffer[0];
-						handle.encryp_type = buffer[1];
+						handle.crypto_type = buffer[1];
 						handle.data_len = (buffer[2] << 0) |
 								  (buffer[3] << 8) |
 								  (buffer[4] << 16) |
 								  (buffer[5] << 24);
-						ESP_LOGI(TAG, "(%d) data_type:%02x, encryp_type:%02x, data_len:%lu", fds[index],
-							 handle.data_type, handle.encryp_type, handle.data_len);
+						ESP_LOGI(TAG, "(%d) data_type:%02x, crypto_type:%02x, data_len:%lu", fds[index],
+							 handle.data_type, handle.crypto_type, handle.data_len);
 
 						count = 0;
 						while (count < handle.data_len) {
@@ -561,11 +572,19 @@ static void simple_ctrl_body_handle(void)
 								int vaild_size = ret;
 
 								data_info[0] = handle.data_type;
-								data_info[1] = handle.encryp_type;
+								data_info[1] = crypto_type;
 								data_info[2] = (uint8_t)((handle.ret_len >> 0) & 0xff);
 								data_info[3] = (uint8_t)((handle.ret_len >> 8) & 0xff);
 								data_info[4] = (uint8_t)((handle.ret_len >> 16) & 0xff);
 								data_info[5] = (uint8_t)((handle.ret_len >> 24) & 0xff);
+
+								/* Encrypto */
+								ret = crypto_en(&handle.out_crypto, buffer, vaild_size, sizeof(buffer));
+								if (ret < 0) {
+									ESP_LOGE(TAG, "(%d) Encryption failed: %d", fds[index], ret);
+									goto closefd;
+								}
+								vaild_size = ret;
 
 								xSemaphoreTake(send_mutex, portMAX_DELAY);
 
