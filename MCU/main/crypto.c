@@ -28,6 +28,7 @@
 #include <esp_log.h>
 #include <string.h>
 #include "crypto.h"
+#include "aes.h"
 
 static const char *TAG = "CRYPTO";
 
@@ -76,9 +77,75 @@ static int de_xor(struct crypto *handle, char *buffer, int vaild_size, int buff_
 	return do_xor(handle, buffer, vaild_size);
 }
 
+static inline int aes128ecb_check_key(struct crypto *handle)
+{
+	if (handle->plen > 16) {
+		ESP_LOGE(TAG, "The key length of AES128 must be 16 bytes");
+		return -1;
+	}
+
+	return 0;
+}
+
+static inline int aes128ecb_check_size(int vaild_size, int buff_size)
+{
+	if ((vaild_size & 0xf) && (((vaild_size >> 4) + 1) > (buff_size >> 4))) {
+		ESP_LOGE(TAG, "Not enough space in the buffer");
+		return -1;
+	}
+
+	return 0;
+}
+
+static inline void aes128ecb_fill_key(struct crypto *handle, uint8_t *key)
+{
+	if (handle->plen)
+		memcpy(key, handle->passwd, handle->plen);
+	if (handle->plen != 16)
+		memset(key + handle->plen, 0, 16 - handle->plen);
+}
+
+static int do_aes128ecb(struct crypto *handle, char *buffer, int vaild_size, int buff_size,
+			void (*func)(const struct AES_ctx* ctx, uint8_t* buf))
+{
+	struct AES_ctx ctx;
+	uint8_t key[16];
+	int ret;
+
+	ret = aes128ecb_check_size(vaild_size, buff_size);
+	if (ret)
+		return ret;
+	ret = aes128ecb_check_key(handle);
+	if (ret)
+		return ret;
+	aes128ecb_fill_key(handle, key);
+
+	ret = vaild_size & 0xf;
+	if (ret)
+		memset(buffer + vaild_size, 0, 16 - ret);
+
+	AES_init_ctx(&ctx, key);
+
+	for (ret = 0; ret < vaild_size; ret += 16)
+		func(&ctx, (uint8_t *)buffer + ret);
+
+	return ret;
+}
+
+static int en_aes128ecb(struct crypto *handle, char *buffer, int vaild_size, int buff_size)
+{
+	return do_aes128ecb(handle, buffer, vaild_size, buff_size, AES_ECB_encrypt);
+}
+
+static int de_aes128ecb(struct crypto *handle, char *buffer, int vaild_size, int buff_size)
+{
+	return do_aes128ecb(handle, buffer, vaild_size, buff_size, AES_ECB_decrypt);
+}
+
 static struct algorithm list[CRYPTO_TYPE_MAX] = {
-	[CRYPTO_TYPE_NONE] = { en_none, de_none },	/* 0x00: No encryption */
-	[CRYPTO_TYPE_XOR] = { en_xor, de_xor },		/* 0x01: Simple xor replacement */
+	[CRYPTO_TYPE_NONE] = { en_none, de_none },			/* 0x00: No encryption */
+	[CRYPTO_TYPE_XOR] = { en_xor, de_xor },				/* 0x01: Simple xor replacement */
+	[CRYPTO_TYPE_AES128ECB] = { en_aes128ecb, de_aes128ecb },	/* 0x02: AES128-ECB */
 };
 
 int crypto_en(struct crypto *handle, char *buffer, int vaild_size, int buff_size)

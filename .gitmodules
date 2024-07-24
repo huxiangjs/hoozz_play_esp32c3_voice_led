@@ -7,3 +7,6 @@
 [submodule "MCU/components/tflm"]
 	path = MCU/components/tflm
 	url = https://github.com/huxiangjs/tflite-micro-components-for-esp32c3.git
+[submodule "MCU/main/tiny-AES-c"]
+	path = MCU/main/tiny-AES-c
+	url = https://github.com/kokke/tiny-AES-c.git

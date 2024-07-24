@@ -33,7 +33,8 @@ extern "C" {
 
 #define CRYPTO_TYPE_NONE		0x00
 #define CRYPTO_TYPE_XOR			0x01
-#define CRYPTO_TYPE_MAX			0x02
+#define CRYPTO_TYPE_AES128ECB		0x02
+#define CRYPTO_TYPE_MAX			0x03
 
 struct crypto {
 	uint32_t count;

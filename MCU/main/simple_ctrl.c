@@ -57,10 +57,12 @@ static const char *TAG = "SIMPLE-CTRL";
 #define BODY_TCP_BUFFER_SIZE		128
 #define BODY_TCP_TIMEOUT		30
 
-#define CTRL_DATA_TYPE_PING		0x00
-#define CTRL_DATA_TYPE_INFO		0x01
-#define CTRL_DATA_TYPE_REQUEST		0x02
-#define CTRL_DATA_TYPE_NOTIFY		0x03
+#define NOTIFY_BUFFER_SIZE		128
+
+#define CTRL_LOAD_TYPE_PING		0x00
+#define CTRL_LOAD_TYPE_INFO		0x01
+#define CTRL_LOAD_TYPE_REQUEST		0x02
+#define CTRL_LOAD_TYPE_NOTIFY		0x03
 
 #define CTRL_INFO_TYPE_GETNAME		0x00
 #define CTRL_INFO_TYPE_SETNAME		0x01
@@ -69,13 +71,13 @@ static const char *TAG = "SIMPLE-CTRL";
 #define CTRL_RETURN_OK			0x00
 #define CTRL_RETURN_FAIL		0x01
 
-#define CTRL_DATA_HEADER		"HOOZZ"
-#define CTRL_DATA_HEADER_SIZE		(sizeof(CTRL_DATA_HEADER) - 1)
+#define CTRL_LOAD_MAGIC			"HOOZZ"
+#define CTRL_LOAD_HEADER_SIZE		16
 
 struct simple_ctrl_handle {
-	uint8_t data_type;
+	uint8_t load_type;
 	uint8_t crypto_type;
-	uint32_t data_len;
+	uint32_t load_len;
 	uint32_t ret_len;
 	struct crypto in_crypto;
 	struct crypto out_crypto;
@@ -91,7 +93,7 @@ static char info_id[SIMPLE_CTRL_INFO_ID_LENGTH + 1] = SIMPLE_CTRL_INFO_ID_DEFAUL
 
 static char crypto_passwd_data[16];
 static int crypto_passwd_len;
-static uint8_t crypto_type = CRYPTO_TYPE_XOR;
+static uint8_t crypto_type = CRYPTO_TYPE_AES128ECB;
 
 static void simple_ctrl_init_info_id(void)
 {
@@ -106,7 +108,7 @@ static void simple_ctrl_init_info_id(void)
 
 static inline void simple_ctrl_discover_set_respond(char *buf, size_t buf_size)
 {
-	/* |--MAGIC(6bytes)--|--CLASS(2byte)--|--ID(14bytes)--|--NAME(nbytes)--| */
+	/* |--MAGIC(6bytes)--|--CLASS(2bytes)--|--ID(14bytes)--|--NAME(nbytes)--| */
 	snprintf(buf, buf_size, "%s%02x%s%s", DISCOVER_RESPOND, info_class_id, info_id, info_name);
 }
 
@@ -335,24 +337,28 @@ static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 		return ret;
 	vaild_size = ret;
 
-	if ((ret < CTRL_DATA_HEADER_SIZE) ||
-	    memcmp(CTRL_DATA_HEADER, buffer, CTRL_DATA_HEADER_SIZE)) {
-		ESP_LOGE(TAG, "Data format is incorrect");
+	if ((vaild_size < CTRL_LOAD_HEADER_SIZE) ||
+	    memcmp(CTRL_LOAD_MAGIC, buffer, sizeof(CTRL_LOAD_MAGIC))) {
+		ESP_LOGE(TAG, "Magic is incorrect");
 		return -1;
 	}
-	vaild_size -= CTRL_DATA_HEADER_SIZE;
+	/* |--Magic(6bytes)--|--Reserved(6bytes)--|--Data size(4bytes)--| */
+	vaild_size = (buffer[12] << 0) |
+		     (buffer[13] << 8) |
+		     (buffer[14] << 16) |
+		     (buffer[15] << 24);
 
-	switch (handle->data_type) {
-	case CTRL_DATA_TYPE_PING:
-		ret = simple_ctrl_ping(buffer, CTRL_DATA_HEADER_SIZE, vaild_size, buff_size);
+	switch (handle->load_type) {
+	case CTRL_LOAD_TYPE_PING:
+		ret = simple_ctrl_ping(buffer, CTRL_LOAD_HEADER_SIZE, vaild_size, buff_size);
 		break;
-	case CTRL_DATA_TYPE_INFO:
-		ret = simple_ctrl_info(buffer, CTRL_DATA_HEADER_SIZE, vaild_size, buff_size);
+	case CTRL_LOAD_TYPE_INFO:
+		ret = simple_ctrl_info(buffer, CTRL_LOAD_HEADER_SIZE, vaild_size, buff_size);
 		break;
-	case CTRL_DATA_TYPE_REQUEST:
-		ret = request_handle(buffer, CTRL_DATA_HEADER_SIZE, vaild_size, buff_size);
+	case CTRL_LOAD_TYPE_REQUEST:
+		ret = request_handle(buffer, CTRL_LOAD_HEADER_SIZE, vaild_size, buff_size);
 		break;
-	case CTRL_DATA_TYPE_NOTIFY:
+	case CTRL_LOAD_TYPE_NOTIFY:
 		ret = 0;
 		break;
 	}
@@ -360,7 +366,11 @@ static int simple_ctrl_handle_pad(struct simple_ctrl_handle *handle,
 	handle->ret_len = 0;
 
 	if (ret > 0) {
-		ret += CTRL_DATA_HEADER_SIZE;
+		buffer[12] = (uint8_t)((ret >> 0) & 0xff);
+		buffer[13] = (uint8_t)((ret >> 8) & 0xff);
+		buffer[14] = (uint8_t)((ret >> 16) & 0xff);
+		buffer[15] = (uint8_t)((ret >> 24) & 0xff);
+		ret += CTRL_LOAD_HEADER_SIZE;
 		handle->ret_len = (uint32_t)ret;
 	}
 
@@ -373,58 +383,68 @@ void simple_ctrl_notify(char *buffer, int size)
 {
 	int index;
 	int ret;
-	uint8_t data_info[6];
-	char header[] = CTRL_DATA_HEADER;
-	int header_size = CTRL_DATA_HEADER_SIZE;
-	int data_size;
+	uint8_t load_info[6];
+	char header[CTRL_LOAD_HEADER_SIZE] = CTRL_LOAD_MAGIC;
+	char enbuf[NOTIFY_BUFFER_SIZE];
+	int load_size;
 	struct crypto handle;
+
+	if (size > NOTIFY_BUFFER_SIZE) {
+		ESP_LOGE(TAG, "Not enough space in the enbuf");
+		return;
+	}
+	memcpy(enbuf, buffer, size);
 
 	crypto_init(&handle, crypto_type, crypto_passwd_data, crypto_passwd_len);
 
-	ret = crypto_en(&handle, header, header_size, header_size);
-	if (ret < 0)
+	header[12] = (uint8_t)((size >> 0) & 0xff);
+	header[13] = (uint8_t)((size >> 8) & 0xff);
+	header[14] = (uint8_t)((size >> 16) & 0xff);
+	header[15] = (uint8_t)((size >> 24) & 0xff);
+	ret = crypto_en(&handle, header, sizeof(header), sizeof(header));
+	if (ret != sizeof(header))
 		return;
-	header_size = ret;
+	load_size = sizeof(header);
 
-	ret = crypto_en(&handle, buffer, size, size);
+	ret = crypto_en(&handle, enbuf, size, sizeof(enbuf));
 	if (ret < 0)
 		return;
 	size = ret;
-	data_size = header_size + size;
+	load_size += size;
 
-	data_info[0] = CTRL_DATA_TYPE_NOTIFY;
-	data_info[1] = crypto_type;
-	data_info[2] = (uint8_t)((data_size >> 0) & 0xff);
-	data_info[3] = (uint8_t)((data_size >> 8) & 0xff);
-	data_info[4] = (uint8_t)((data_size >> 16) & 0xff);
-	data_info[5] = (uint8_t)((data_size >> 24) & 0xff);
+	load_info[0] = CTRL_LOAD_TYPE_NOTIFY;
+	load_info[1] = crypto_type;
+	load_info[2] = (uint8_t)((load_size >> 0) & 0xff);
+	load_info[3] = (uint8_t)((load_size >> 8) & 0xff);
+	load_info[4] = (uint8_t)((load_size >> 16) & 0xff);
+	load_info[5] = (uint8_t)((load_size >> 24) & 0xff);
 
-	ESP_LOGD(TAG, "Data size: %d", data_size);
+	ESP_LOGD(TAG, "Load size: %d", load_size);
 
 	for (index = 0; index < BODY_TCP_MAX_ACCEPT; index++) {
 		if (fds[index] != -1) {
 			xSemaphoreTake(send_mutex, portMAX_DELAY);
 
 			/* Send info */
-			ret = send(fds[index], data_info, sizeof(data_info), 0);
-			if (ret != sizeof(data_info)) {
-				ESP_LOGE(TAG, "Send data info fail: %d", ret);
+			ret = send(fds[index], load_info, sizeof(load_info), 0);
+			if (ret != sizeof(load_info)) {
+				ESP_LOGE(TAG, "Send load info fail: %d", ret);
 				xSemaphoreGive(send_mutex);
 				continue;
 			}
 
 			/* Send header */
-			ret = send(fds[index], header, header_size, 0);
-			if (ret != header_size) {
-				ESP_LOGE(TAG, "Send data header fail: %d", ret);
+			ret = send(fds[index], header, sizeof(header), 0);
+			if (ret != sizeof(header)) {
+				ESP_LOGE(TAG, "Send load header fail: %d", ret);
 				xSemaphoreGive(send_mutex);
 				continue;
 			}
 
-			/* Send data */
-			ret = send(fds[index], buffer, size, 0);
+			/* Send load */
+			ret = send(fds[index], enbuf, size, 0);
 			if (ret != size) {
-				ESP_LOGE(TAG, "Send data fail: %d", ret);
+				ESP_LOGE(TAG, "Send load fail: %d", ret);
 				xSemaphoreGive(send_mutex);
 				continue;
 			}
@@ -541,19 +561,19 @@ static void simple_ctrl_body_handle(void)
 						simple_ctrl_handle_reset(&handle);
 
 						/* Fill parameter */
-						handle.data_type = buffer[0];
+						handle.load_type = buffer[0];
 						handle.crypto_type = buffer[1];
-						handle.data_len = (buffer[2] << 0) |
+						handle.load_len = (buffer[2] << 0) |
 								  (buffer[3] << 8) |
 								  (buffer[4] << 16) |
 								  (buffer[5] << 24);
-						ESP_LOGI(TAG, "(%d) data_type:%02x, crypto_type:%02x, data_len:%lu", fds[index],
-							 handle.data_type, handle.crypto_type, handle.data_len);
+						ESP_LOGI(TAG, "(%d) load_type:%02x, crypto_type:%02x, load_len:%lu", fds[index],
+							 handle.load_type, handle.crypto_type, handle.load_len);
 
 						count = 0;
-						while (count < handle.data_len) {
-							size = handle.data_len > (uint32_t)sizeof(buffer) ?
-							       sizeof(buffer) : handle.data_len;
+						while (count < handle.load_len) {
+							size = handle.load_len > (uint32_t)sizeof(buffer) ?
+							       sizeof(buffer) : handle.load_len;
 							/* Read pack data */
 							ret = recv(fds[index], buffer, size, 0);
 							if (ret <= 0) {
@@ -563,20 +583,13 @@ static void simple_ctrl_body_handle(void)
 							ESP_LOGD(TAG, "(%d) Expect: %lu; Result: %d", fds[index], size, ret);
 
 							count += ret;
-							ESP_LOGD(TAG, "(%d) Handle [%lu/%lu]", fds[index], count, handle.data_len);
+							ESP_LOGD(TAG, "(%d) Handle [%lu/%lu]", fds[index], count, handle.load_len);
 
 							/* Handle data */
 							ret = simple_ctrl_handle_pad(&handle, buffer, ret, sizeof(buffer));
 							if (ret > 0) {
-								uint8_t data_info[6];
+								uint8_t load_info[6];
 								int vaild_size = ret;
-
-								data_info[0] = handle.data_type;
-								data_info[1] = crypto_type;
-								data_info[2] = (uint8_t)((handle.ret_len >> 0) & 0xff);
-								data_info[3] = (uint8_t)((handle.ret_len >> 8) & 0xff);
-								data_info[4] = (uint8_t)((handle.ret_len >> 16) & 0xff);
-								data_info[5] = (uint8_t)((handle.ret_len >> 24) & 0xff);
 
 								/* Encrypto */
 								ret = crypto_en(&handle.out_crypto, buffer, vaild_size, sizeof(buffer));
@@ -586,25 +599,32 @@ static void simple_ctrl_body_handle(void)
 								}
 								vaild_size = ret;
 
+								load_info[0] = handle.load_type;
+								load_info[1] = crypto_type;
+								load_info[2] = (uint8_t)((vaild_size >> 0) & 0xff);
+								load_info[3] = (uint8_t)((vaild_size >> 8) & 0xff);
+								load_info[4] = (uint8_t)((vaild_size >> 16) & 0xff);
+								load_info[5] = (uint8_t)((vaild_size >> 24) & 0xff);
+
 								xSemaphoreTake(send_mutex, portMAX_DELAY);
 
 								/* Send info */
-								ret = send(fds[index], data_info, sizeof(data_info), 0);
-								if (ret != sizeof(data_info)) {
-									ESP_LOGE(TAG, "(%d) Send data info fail: %d", fds[index], ret);
+								ret = send(fds[index], load_info, sizeof(load_info), 0);
+								if (ret != sizeof(load_info)) {
+									ESP_LOGE(TAG, "(%d) Send load info fail: %d", fds[index], ret);
 									xSemaphoreGive(send_mutex);
 									goto closefd;
 								}
-								ESP_LOGD(TAG, "(%d) Send info: %d", fds[index], ret);
+								ESP_LOGD(TAG, "(%d) Send load info: %d", fds[index], ret);
 
 								/* Send data */
 								ret = send(fds[index], buffer, vaild_size, 0);
 								if (ret != vaild_size) {
-									ESP_LOGE(TAG, "(%d) Send data info fail: %d", fds[index], ret);
+									ESP_LOGE(TAG, "(%d) Send load data fail: %d", fds[index], ret);
 									xSemaphoreGive(send_mutex);
 									goto closefd;
 								}
-								ESP_LOGD(TAG, "(%d) Send data: %d", fds[index], ret);
+								ESP_LOGD(TAG, "(%d) Send load data: %d", fds[index], ret);
 
 								xSemaphoreGive(send_mutex);
 							} else if (ret < 0) {

@@ -13,9 +13,11 @@ idf_component_register(
 		"simple_ctrl.c"
 		"crypto.c"
 		"sample_send.c"
+		"tiny-AES-c/aes.c"
 
         INCLUDE_DIRS
 		"."
+		"tiny-AES-c"
 		"../components/tflm/project"
 		"../components/tflm/project/third_party/gemmlowp"
 		"../components/tflm/project/third_party/flatbuffers/include"
