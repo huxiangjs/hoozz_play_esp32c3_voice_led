@@ -67,12 +67,15 @@ static const char *TAG = "SIMPLE-CTRL";
 #define CTRL_INFO_TYPE_GETNAME		0x00
 #define CTRL_INFO_TYPE_SETNAME		0x01
 #define CTRL_INFO_TYPE_GETCLASSID	0x02
+#define CTRL_INFO_TYPE_SETPASSWD	0x03
 
 #define CTRL_RETURN_OK			0x00
 #define CTRL_RETURN_FAIL		0x01
 
 #define CTRL_LOAD_MAGIC			"HOOZZ"
 #define CTRL_LOAD_HEADER_SIZE		16
+
+#define CTRL_INFO_PASSWD_LENGTH		16
 
 struct simple_ctrl_handle {
 	uint8_t load_type;
@@ -81,6 +84,8 @@ struct simple_ctrl_handle {
 	uint32_t ret_len;
 	struct crypto in_crypto;
 	struct crypto out_crypto;
+	char passwd_data[CTRL_INFO_PASSWD_LENGTH];
+	int passwd_len;
 };
 
 static int discover_socket;
@@ -91,7 +96,7 @@ static char info_name[SIMPLE_CTRL_INFO_NAME_LENGTH + 1] = SIMPLE_CTRL_INFO_NAME_
 static uint8_t info_class_id = CLASS_ID_UNKNOWN;
 static char info_id[SIMPLE_CTRL_INFO_ID_LENGTH + 1] = SIMPLE_CTRL_INFO_ID_DEFAULT;
 
-static char crypto_passwd_data[16];
+static char crypto_passwd_data[CTRL_INFO_PASSWD_LENGTH];
 static int crypto_passwd_len;
 static uint8_t crypto_type = CRYPTO_TYPE_AES128ECB;
 
@@ -214,8 +219,10 @@ static bool simple_ctrl_notify_callback(struct event_bus_msg *msg)
 static void simple_ctrl_handle_reset(struct simple_ctrl_handle *handle)
 {
 	memset(handle, 0, sizeof(struct simple_ctrl_handle));
-	crypto_init(&handle->in_crypto, crypto_type, crypto_passwd_data, crypto_passwd_len);
-	crypto_init(&handle->out_crypto, crypto_type, crypto_passwd_data, crypto_passwd_len);
+	memcpy(handle->passwd_data, crypto_passwd_data, crypto_passwd_len);
+	handle->passwd_len = crypto_passwd_len;
+	crypto_init(&handle->in_crypto, crypto_type, handle->passwd_data, handle->passwd_len);
+	crypto_init(&handle->out_crypto, crypto_type, handle->passwd_data, handle->passwd_len);
 }
 
 static int simple_ctrl_none_request(char *buffer, int buf_offs, int vaild_size, int buff_size)
@@ -312,6 +319,19 @@ static int simple_ctrl_info(char *buffer, int buf_offs, int vaild_size, int buff
 		}
 		buffer[buf_offs + 1] = CTRL_RETURN_OK;
 		buffer[buf_offs + 2] = info_class_id;
+		break;
+	case CTRL_INFO_TYPE_SETPASSWD:
+		len = vaild_size - 1;
+		if (len > CTRL_INFO_PASSWD_LENGTH) {
+			buffer[buf_offs + 1] = CTRL_RETURN_FAIL;
+			ret = 2;
+		} else {
+			memcpy(crypto_passwd_data, buffer + buf_offs + 1, len);
+			crypto_passwd_len = len;
+			buffer[buf_offs + 1] = CTRL_RETURN_OK;
+			ret = 2;
+			ESP_LOGI(TAG, "Access password has been changed");
+		}
 		break;
 	default:
 		buffer[buf_offs + 1] = CTRL_RETURN_FAIL;
