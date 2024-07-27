@@ -51,10 +51,10 @@ idf.py build && idf.py flash
    .
    |-- bootloader
    |   `-- bootloader.bin
-   |-- voice_led.bin
    |-- flash_args
-   `-- partition_table
-       `-- partition-table.bin
+   |-- partition_table
+   |   `-- partition-table.bin
+   `-- voice_led.bin
 
    2 directories, 4 files
    ```
