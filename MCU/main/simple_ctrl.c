@@ -213,6 +213,12 @@ static bool simple_ctrl_notify_callback(struct event_bus_msg *msg)
 	case EVENT_BUS_WIFI_DISCONNECTED:
 		close(discover_socket);
 		break;
+	case EVENT_BUS_STOP_SMART_CONFIG:
+		ESP_LOGI(TAG, "Reset password...");
+		memset(crypto_passwd, 0, sizeof(crypto_passwd));
+		spiffs_save(SPIFFS_PASSWD_FILE_NAME, crypto_passwd,
+			    sizeof(crypto_passwd));
+		break;
 	}
 
 	return false;
