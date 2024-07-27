@@ -40,6 +40,7 @@
 #include "event_bus.h"
 #include "recognition.h"
 #include "simple_ctrl.h"
+#include "spiffs.h"
 
 static const char *TAG = "APP-MAIN";
 
@@ -205,6 +206,8 @@ extern "C" void app_main(void)
 	ESP_ERROR_CHECK(nvs_flash_init());
 
 	main_handle = xTaskGetCurrentTaskHandle();
+
+	spiffs_init();
 
 	/* Event bus */
 	event_bus_init();

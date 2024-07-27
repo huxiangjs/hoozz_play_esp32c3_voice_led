@@ -14,6 +14,7 @@ idf_component_register(
 		"crypto.c"
 		"sample_send.c"
 		"tiny-AES-c/aes.c"
+		"spiffs.c"
 
         INCLUDE_DIRS
 		"."

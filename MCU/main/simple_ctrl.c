@@ -37,6 +37,7 @@
 #include "event_bus.h"
 #include "crypto.h"
 #include "class_id.h"
+#include "spiffs.h"
 
 static const char *TAG = "SIMPLE-CTRL";
 
@@ -77,6 +78,8 @@ static const char *TAG = "SIMPLE-CTRL";
 
 #define CTRL_INFO_PASSWD_LENGTH		16
 
+#define SPIFFS_PASSWD_FILE_NAME		"VOICE-LED-PASSWD"
+
 struct simple_ctrl_handle {
 	uint8_t load_type;
 	uint8_t crypto_type;
@@ -96,8 +99,7 @@ static char info_name[SIMPLE_CTRL_INFO_NAME_LENGTH + 1] = SIMPLE_CTRL_INFO_NAME_
 static uint8_t info_class_id = CLASS_ID_UNKNOWN;
 static char info_id[SIMPLE_CTRL_INFO_ID_LENGTH + 1] = SIMPLE_CTRL_INFO_ID_DEFAULT;
 
-static char crypto_passwd_data[CTRL_INFO_PASSWD_LENGTH];
-static int crypto_passwd_len;
+static char crypto_passwd[1 + CTRL_INFO_PASSWD_LENGTH];
 static uint8_t crypto_type = CRYPTO_TYPE_AES128ECB;
 
 static void simple_ctrl_init_info_id(void)
@@ -219,8 +221,8 @@ static bool simple_ctrl_notify_callback(struct event_bus_msg *msg)
 static void simple_ctrl_handle_reset(struct simple_ctrl_handle *handle)
 {
 	memset(handle, 0, sizeof(struct simple_ctrl_handle));
-	memcpy(handle->passwd_data, crypto_passwd_data, crypto_passwd_len);
-	handle->passwd_len = crypto_passwd_len;
+	memcpy(handle->passwd_data, crypto_passwd + 1, crypto_passwd[0]);
+	handle->passwd_len = crypto_passwd[0];
 	crypto_init(&handle->in_crypto, crypto_type, handle->passwd_data, handle->passwd_len);
 	crypto_init(&handle->out_crypto, crypto_type, handle->passwd_data, handle->passwd_len);
 }
@@ -325,12 +327,21 @@ static int simple_ctrl_info(char *buffer, int buf_offs, int vaild_size, int buff
 		if (len > CTRL_INFO_PASSWD_LENGTH) {
 			buffer[buf_offs + 1] = CTRL_RETURN_FAIL;
 			ret = 2;
+			ESP_LOGE(TAG, "Password is too long");
 		} else {
-			memcpy(crypto_passwd_data, buffer + buf_offs + 1, len);
-			crypto_passwd_len = len;
-			buffer[buf_offs + 1] = CTRL_RETURN_OK;
-			ret = 2;
-			ESP_LOGI(TAG, "Access password has been changed");
+			memcpy(crypto_passwd + 1, buffer + buf_offs + 1, len);
+			crypto_passwd[0] = (char)len;
+			ret = spiffs_save(SPIFFS_PASSWD_FILE_NAME, crypto_passwd,
+					  sizeof(crypto_passwd));
+			if (ret) {
+				buffer[buf_offs + 1] = CTRL_RETURN_FAIL;
+				ret = 2;
+				ESP_LOGE(TAG, "Access password saving failed");
+			} else {
+				buffer[buf_offs + 1] = CTRL_RETURN_OK;
+				ret = 2;
+				ESP_LOGI(TAG, "Access password has been changed");
+			}
 		}
 		break;
 	default:
@@ -415,7 +426,7 @@ void simple_ctrl_notify(char *buffer, int size)
 	}
 	memcpy(enbuf, buffer, size);
 
-	crypto_init(&handle, crypto_type, crypto_passwd_data, crypto_passwd_len);
+	crypto_init(&handle, crypto_type, crypto_passwd + 1, crypto_passwd[0]);
 
 	header[12] = (uint8_t)((size >> 0) & 0xff);
 	header[13] = (uint8_t)((size >> 8) & 0xff);
@@ -688,6 +699,8 @@ void simple_ctrl_init(void)
 	int ret;
 
 	simple_ctrl_init_info_id();
+
+	spiffs_load(SPIFFS_PASSWD_FILE_NAME, crypto_passwd, sizeof(crypto_passwd));
 
 	ret = xTaskCreate(simple_ctrl_discover_task, "simple_ctrl_discover_task", 2048,
 			  NULL, tskIDLE_PRIORITY + 2, &discover_handle);
