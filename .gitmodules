@@ -10,3 +10,6 @@
 [submodule "MCU/main/tiny-AES-c"]
 	path = MCU/main/tiny-AES-c
 	url = https://github.com/kokke/tiny-AES-c.git
+[submodule "MCU/main/esp32-common"]
+	path = MCU/main/esp32-common
+	url = https://github.com/huxiangjs/esp32-common.git

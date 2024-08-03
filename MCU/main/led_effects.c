@@ -28,11 +28,14 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include "esp_log.h"
+#include "driver/gpio.h"
 #include "led_effects.h"
 #include "ws2812b.h"
 #include "event_bus.h"
 
 static const char *TAG = "LED";
+
+#define WS2812B_DOUT_GPIO			GPIO_NUM_4
 
 /* Default value for prompt */
 #define SMARTCONFIG_DEFAULT_VALUE		10
@@ -230,7 +233,7 @@ void led_effects_init(void)
 
 	ESP_LOGI(TAG, "LED Init");
 
-	ws2812b_init();
+	ws2812b_init(WS2812B_DOUT_GPIO);
 	ws2812b_off();
 
 	/* Create message queue */
