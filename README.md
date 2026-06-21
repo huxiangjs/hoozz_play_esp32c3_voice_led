@@ -3,6 +3,8 @@ A low-cost LED that has both network control and voice control.
 
 This is a sub-repository, and the main repository is located at [Hoozz Play](https://github.com/huxiangjs/hoozz_play)
 
+[![ESP32 CI](https://github.com/huxiangjs/hoozz_play_esp32c3_voice_led/actions/workflows/esp32.yml/badge.svg)](https://github.com/huxiangjs/hoozz_play_esp32c3_voice_led/actions/workflows/esp32.yml)
+
 ## Product View
 ![top](Images/product_view.png)
 
