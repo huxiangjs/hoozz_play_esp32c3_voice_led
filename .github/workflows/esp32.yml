@@ -1,0 +1,102 @@
+name: ESP32 CI
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    # Checkout the repository to the GitHub Actions runner
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        path: esp32-build
+        fetch-depth: 1
+
+    # Install jq
+    - name: Install jq
+      run: sudo apt-get install -y jq
+
+    # Get ESP-IDF
+    - name: Get ESP-IDF
+      uses: actions/checkout@v4
+      with:
+        repository: espressif/esp-idf
+        ref: release/v5.2
+        fetch-depth: 1
+        path: esp-idf
+
+    # Cache ESP-IDF
+    - name: Cache ESP-IDF
+      uses: actions/cache@v3
+      with:
+        path: |
+          esp-idf
+          ~/.espressif
+        key: ${{ runner.os }}-esp-idf-${{ hashFiles('esp-idf/.git/refs/heads/release/v5.2') }}
+        restore-keys: |
+          ${{ runner.os }}-esp-idf-
+
+    # Install ESP-IDF
+    - name: Install ESP-IDF
+      run: |
+        cd esp-idf/
+        ./install.sh
+
+    # Run ESP32 build command
+    - name: Build
+      run: |
+        cd esp-idf/
+        . ./export.sh
+        cd -
+        cd esp32-build/MCU
+        idf.py build
+        cd build
+        project_name=$(jq -r '.project_name' project_description.json)
+        zip release.zip bootloader/bootloader.bin flash_args partition_table/partition-table.bin $project_name.bin
+
+    # Check tag
+    - name: Check if the event is a tag push
+      id: check_tag_push
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          echo "Is tag push"
+          echo "IS_TAG_PUSH=true" >> $GITHUB_OUTPUT
+        else
+          echo "IS_TAG_PUSH=false" >> $GITHUB_OUTPUT
+        fi
+
+    # Create release
+    - name: Create Release
+      if: steps.check_tag_push.outputs.IS_TAG_PUSH == 'true'
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+
+    # Upload binary file to release
+    - name: Upload Release Asset
+      if: steps.check_tag_push.outputs.IS_TAG_PUSH == 'true'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: esp32-build/MCU/build/release.zip
+        asset_name: ${{ github.event.repository.name }}_${{ github.ref_name }}.zip
+        asset_content_type: application/zip
