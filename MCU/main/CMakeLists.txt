@@ -8,7 +8,7 @@ idf_component_register(
 		"esp32-common/event_bus.c"
 		"esp32-common/simple_ctrl.c"
 		"esp32-common/crypto.c"
-		"esp32-common/spiffs.c"
+		"esp32-common/store.c"
 		"tiny-AES-c/aes.c"
 		"main.cpp"
 		"audio.c"
