@@ -225,8 +225,7 @@ extern "C" void app_main(void)
 	wifi_init();
 
 	/* Network ctrl */
-	simple_ctrl_init();
-	simple_ctrl_set_name("VOICE LED");
+	simple_ctrl_init("VOICE LED");
 	simple_ctrl_set_class_id(CLASS_ID_VOICE_LED);
 	simple_ctrl_request_register(app_led_request);
 
