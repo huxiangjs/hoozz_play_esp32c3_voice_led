@@ -9,7 +9,9 @@ idf_component_register(
 		"esp32-common/simple_ctrl.c"
 		"esp32-common/crypto.c"
 		"esp32-common/store.c"
-		"tiny-AES-c/aes.c"
+		"esp32-common/ota.c"
+		"esp32-common/tcp_crypto.c"
+		"esp32-common/tiny-AES-c/aes.c"
 		"main.cpp"
 		"audio.c"
 		"recognition.cpp"
@@ -19,7 +21,6 @@ idf_component_register(
         INCLUDE_DIRS
 		"."
 		"esp32-common"
-		"tiny-AES-c"
 		"../components/tflm/project"
 		"../components/tflm/project/third_party/gemmlowp"
 		"../components/tflm/project/third_party/flatbuffers/include"
