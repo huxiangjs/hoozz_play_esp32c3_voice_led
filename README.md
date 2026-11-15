@@ -54,12 +54,13 @@ idf.py build && idf.py flash
    |-- bootloader
    |   `-- bootloader.bin
    |-- flash_args
+   |-- ota_data_initial.bin
    |-- ota_file
    |-- partition_table
    |   `-- partition-table.bin
    `-- voice_led.bin
 
-   2 directories, 5 files
+   2 directories, 6 files
    ```
    (`ota_file` only names the app bin in the zip, it is not flashed)
 3. Open the latest official download tool `flash_download_tool` (official download address: [other-tools](https://www.espressif.com/en/support/download/other-tools))
