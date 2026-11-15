@@ -28,24 +28,26 @@ jobs:
       run: sudo apt-get install -y jq
 
     # Get ESP-IDF
+    # Pinned to the exact commit of the release/v5.2 branch (v5.2.1-76) that
+    # the committed MCU/sdkconfig was generated with. The branch keeps moving
+    # (new 5.2.x backports), and a different IDF version rewrites the
+    # sdkconfig at build time, which would mark the firmware -dirty.
     - name: Get ESP-IDF
       uses: actions/checkout@v4
       with:
         repository: espressif/esp-idf
-        ref: release/v5.2
+        ref: bf17be96b46bd5ab81582e75fa4a8c682841b649
         fetch-depth: 1
         path: esp-idf
 
-    # Cache ESP-IDF
+    # Cache ESP-IDF (fixed key: the pinned IDF never changes)
     - name: Cache ESP-IDF
       uses: actions/cache@v3
       with:
         path: |
           esp-idf
           ~/.espressif
-        key: ${{ runner.os }}-esp-idf-${{ hashFiles('esp-idf/.git/refs/heads/release/v5.2') }}
-        restore-keys: |
-          ${{ runner.os }}-esp-idf-
+        key: ${{ runner.os }}-esp-idf-v5.2.1-76-gbf17be96b4
 
     # Install ESP-IDF
     - name: Install ESP-IDF

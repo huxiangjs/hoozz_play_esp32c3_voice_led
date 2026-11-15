@@ -12,7 +12,7 @@ This is a sub-repository, and the main repository is located at [Hoozz Play](htt
 MCU:
 ```
 idf.py --version
-ESP-IDF v5.2
+ESP-IDF v5.2.1-76-gbf17be96b4
 ```
 Circuit:
 ```
