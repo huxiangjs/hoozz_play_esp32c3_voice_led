@@ -12,7 +12,7 @@ This is a sub-repository, and the main repository is located at [Hoozz Play](htt
 MCU:
 ```
 idf.py --version
-ESP-IDF v5.2.1-76-gbf17be96b4-dirty
+ESP-IDF v5.2
 ```
 Circuit:
 ```
@@ -54,12 +54,26 @@ idf.py build && idf.py flash
    |-- bootloader
    |   `-- bootloader.bin
    |-- flash_args
+   |-- ota_file
    |-- partition_table
    |   `-- partition-table.bin
    `-- voice_led.bin
 
-   2 directories, 4 files
+   2 directories, 5 files
    ```
+   (`ota_file` only names the app bin in the zip, it is not flashed)
 3. Open the latest official download tool `flash_download_tool` (official download address: [other-tools](https://www.espressif.com/en/support/download/other-tools))
 4. Use the following options: (1) `Chip Type [ESP32-C3]`; (2) `WorkMode [Develop]`; (3) `LoadMode [USB]`;
 5. According to the content of the `flash_args` file, configure the burning file, address and flash type. Keep the default selection for places not mentioned, and finally click **Start** to burn
+
+## OTA Firmware Update
+
+The firmware supports over-the-air updates from the Hoozz Play app. The
+current firmware version (the git commit of this repo) is reported to the
+app and printed to the serial log at startup. The update is downloaded
+over the encrypted tunnel and written to the other OTA partition; if the
+new firmware fails to boot, the device rolls back to the previous one.
+
+To publish a new firmware, push a version tag (e.g. `v1.0`); the CI build
+uploads the release zip to GitHub Releases, which the app then uses to
+update the devices.

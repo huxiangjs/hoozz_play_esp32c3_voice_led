@@ -63,7 +63,13 @@ jobs:
         idf.py build
         cd build
         project_name=$(jq -r '.project_name' project_description.json)
-        zip release.zip bootloader/bootloader.bin flash_args partition_table/partition-table.bin $project_name.bin
+        # The flash pieces (see MCU/partitions.csv):
+        #   0x0000 bootloader.bin  0x8000 partition-table.bin
+        #   0x20000 ota_0 (app)   0x1A0000 ota_1
+        # ota_file names the app bin the OTA update flashes (the app reads
+        # it from the release zip to pick the firmware image)
+        echo "$project_name.bin" > ota_file
+        zip release.zip bootloader/bootloader.bin flash_args partition_table/partition-table.bin ota_file $project_name.bin
 
     # Check tag
     - name: Check if the event is a tag push
